@@ -1,32 +1,22 @@
 /**
- * Automated Lesson Plan Verification
+ * Enterprise Lesson Plan Automation System
  * 
- * Objectives:
- * 1. Parse deadline from "Week Starting" (Friday 23:59:59 GMT).
- * 2. Compare submission timestamp.
- * 3. Mark "LATE" in Column L if needed.
- * 4. Notify respective HOD.
+ * Features:
+ * 1. Dynamic Weekly Sheet Routing & Highlighting
+ * 2. Chronological Google Drive Organization (Week -> Class)
+ * 3. Automatic File Renaming ([Subject] - [Teacher Name])
+ * 4. Automated Teacher Email Receipts
+ * 5. Weekly Friday Late Report for HODs
  */
 
-/**
- * Automated Lesson Plan Verification & Routing
- * 
- * Objectives:
- * 1. Parse "Week Name" (e.g., "Week 1") from submission.
- * 2. Create a specific sheet for that week if it doesn't exist.
- * 3. Calculate deadline (Friday 23:59:59 GMT).
- * 4. Append row to the correct weekly sheet with status "UNREAD".
- * 5. Highlight the row in red if it's late.
- * 6. Notify respective HOD if late.
- */
-
-// Configuration
+// Configuration - UPDATE THESE VALUES
 const CONFIG = {
   HOD_EMAILS: {
     "Mr. Alfred Ashia": "alfredashia@stadelaideschools.com",
     "Mrs. Abigail Sackey": "abigailsackey@stadelaideschool.com"
   },
-  // Indices based on form response array (0-based)
+  // Mapping indices to the form response array (0-based)
+  // Based on: Timestamp(0), Week Starting(1), HOD(2), Teacher(3), Class(4), Subject(5), Upload(6), Email(7)
   INDICES: {
     TIMESTAMP: 0,      // Col A
     WEEK_STARTING: 1,  // Col B
@@ -34,16 +24,25 @@ const CONFIG = {
     TEACHER_NAME: 3,   // Col D
     CLASS: 4,          // Col E
     SUBJECT: 5,        // Col F
-    UPLOAD_LINK: 6     // Col G
+    UPLOAD_LINK: 6,    // Col G
+    TEACHER_EMAIL: 7   // Col H
+  },
+  // Column positions for writing back to sheets
+  COLUMNS: {
+    HOD_CHECK: 10,     // Col J (Manual Toggle: UNREAD/READ)
+    DAYS_LATE: 11      // Col K (Calculated Value)
   },
   HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late"],
-  DEADLINE_HOUR: 23,
-  DEADLINE_MINUTE: 59,
-  DEADLINE_SECOND: 59
+  DEADLINE: {
+    HOUR: 23,
+    MINUTE: 59,
+    SECOND: 59
+  },
+  MASTER_FOLDER_ID: "YOUR_MASTER_FOLDER_ID_HERE" // Paste your Drive Folder ID here
 };
 
 /**
- * Triggered on Form Submit.
+ * 1. MAIN TRIGGER: Runs automatically on form submission.
  */
 function onFormSubmit(e) {
   if (!e) return;
@@ -53,15 +52,16 @@ function onFormSubmit(e) {
   
   const timestamp = new Date(responses[CONFIG.INDICES.TIMESTAMP]);
   const fullWeekString = responses[CONFIG.INDICES.WEEK_STARTING];
-  const hodSelection = responses[CONFIG.INDICES.HOD];
+  const hodName = responses[CONFIG.INDICES.HOD];
   const teacherName = responses[CONFIG.INDICES.TEACHER_NAME];
-  const subject = responses[CONFIG.INDICES.SUBJECT];
+  const className = responses[CONFIG.INDICES.CLASS];
+  const subjectName = responses[CONFIG.INDICES.SUBJECT];
   const uploadLink = responses[CONFIG.INDICES.UPLOAD_LINK];
+  const teacherEmail = responses[CONFIG.INDICES.TEACHER_EMAIL];
   
-  // 1. Extract Sheet Name (e.g., "Week 1")
   const weekName = fullWeekString.split(":")[0].trim();
   
-  // 2. Get or Create Weekly Sheet
+  // --- A. SHEET ROUTING ---
   let weeklySheet = ss.getSheetByName(weekName);
   if (!weeklySheet) {
     weeklySheet = ss.insertSheet(weekName);
@@ -70,44 +70,140 @@ function onFormSubmit(e) {
     weeklySheet.setFrozenRows(1);
   }
   
-  // 3. Calculate Deadline & Lateness
+  // --- B. LATENESS CHECK ---
   const deadline = calculateFridayDeadline(fullWeekString);
   let daysLate = 0;
   if (deadline && timestamp > deadline) {
     const diffTime = Math.abs(timestamp - deadline);
     daysLate = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    const hodEmail = getHodEmail(hodSelection);
+    // Immediate Alert to HOD for late submission
+    const hodEmail = getHodEmail(hodName);
     if (hodEmail) {
-      sendLateAlert(hodEmail, teacherName, subject, timestamp, deadline, daysLate);
+      sendLateAlert(hodEmail, teacherName, subjectName, timestamp, deadline, daysLate);
     }
   }
   
-  // 4. Prepare Row Data
+  // --- C. AUTO-FILING & RENAMING ---
+  try {
+    if (CONFIG.MASTER_FOLDER_ID !== "YOUR_MASTER_FOLDER_ID_HERE") {
+      organizeAndRenameFile(uploadLink, weekName, className, subjectName, teacherName);
+    }
+  } catch (err) {
+    Logger.log("Error organizing file: " + err.message);
+  }
+  
+  // --- D. RECORD DATA & FORMAT ---
   const rowData = [
     responses[CONFIG.INDICES.TIMESTAMP],
     fullWeekString,
-    hodSelection,
+    hodName,
     teacherName,
-    responses[CONFIG.INDICES.CLASS],
-    subject,
+    className,
+    subjectName,
     uploadLink,
     "UNREAD", // Default HOD Check
     daysLate
   ];
   
-  // 5. Append and Format
   weeklySheet.appendRow(rowData);
   const lastRow = weeklySheet.getLastRow();
   
-  // Highlight row if late
   if (daysLate > 0) {
     weeklySheet.getRange(lastRow, 1, 1, rowData.length).setBackground("#f4cccc"); // Light Red
+  }
+  
+  // --- E. EMAIL RECEIPT TO TEACHER ---
+  if (teacherEmail) {
+    sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString, weekName);
   }
 }
 
 /**
- * Parses the Friday of the selected week range at 23:59:59.
+ * 2. AUTO-FILING & RENAMING: Week -> Class structure + Subject - Teacher Name.
+ */
+function organizeAndRenameFile(fileUrl, weekName, className, subjectName, teacherName) {
+  const masterFolder = DriveApp.getFolderById(CONFIG.MASTER_FOLDER_ID);
+
+  const weekFolder = getOrCreateFolder(masterFolder, weekName);
+  const classFolder = getOrCreateFolder(weekFolder, className);
+
+  const fileId = fileUrl.indexOf("id=") !== -1 ? fileUrl.split("id=")[1] : null;
+
+  if (fileId) {
+    const file = DriveApp.getFileById(fileId);
+    
+    // Auto-Rename: [Subject] - [Teacher Name]
+    const originalName = file.getName();
+    const extension = originalName.indexOf('.') !== -1 ? originalName.split('.').pop() : "";
+    const newName = subjectName + " - " + teacherName + (extension ? "." + extension : "");
+    file.setName(newName);
+    
+    file.moveTo(classFolder); 
+  }
+}
+
+/**
+ * 3. FRIDAY REPORT: Time-driven function to summarize late submissions for HODs.
+ */
+function sendFridayLateReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const rawSheet = ss.getSheetByName("Form responses 1"); // Ensure this matches your response tab name
+  if (!rawSheet) return;
+  
+  const data = rawSheet.getDataRange().getValues();
+  const reports = {};
+  
+  // Initialize report objects for each HOD
+  for (let hod in CONFIG.HOD_EMAILS) {
+    reports[hod] = [];
+  }
+
+  // Scan responses (skip header)
+  for (let i = 1; i < data.length; i++) {
+    const hod = data[i][CONFIG.INDICES.HOD];
+    const teacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const classLevel = data[i][CONFIG.INDICES.CLASS];
+    const daysLate = data[i][CONFIG.COLUMNS.DAYS_LATE - 1]; // Correct index for Col K
+
+    if (daysLate > 0) {
+      const entry = `- ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
+      
+      // Match HOD to config
+      for (let configHod in CONFIG.HOD_EMAILS) {
+        if (hod.includes(configHod)) {
+          reports[configHod].push(entry);
+        }
+      }
+    }
+  }
+
+  // Send reports
+  for (let hod in reports) {
+    if (reports[hod].length > 0) {
+      MailApp.sendEmail({
+        to: CONFIG.HOD_EMAILS[hod],
+        subject: `Friday Summary: Overdue Lesson Plans (${hod})`,
+        body: `Hello ${hod},\n\nThe following teachers currently have overdue lesson plans recorded in the system:\n\n${reports[hod].join("\n")}\n\nPlease review the spreadsheet for details.`
+      });
+    }
+  }
+}
+
+/**
+ * HELPER: Folder Management
+ */
+function getOrCreateFolder(parentFolder, folderName) {
+  const folders = parentFolder.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    return folders.next();
+  } else {
+    return parentFolder.createFolder(folderName);
+  }
+}
+
+/**
+ * HELPER: Calculate Friday Deadline
  */
 function calculateFridayDeadline(rangeText) {
   const dateMatch = rangeText.match(/([A-Z][a-z]+ \d{1,2}, \d{4})/);
@@ -118,14 +214,29 @@ function calculateFridayDeadline(rangeText) {
 
   const deadline = new Date(startDate);
   deadline.setDate(startDate.getDate() + 4);
-  deadline.setHours(CONFIG.DEADLINE_HOUR, CONFIG.DEADLINE_MINUTE, CONFIG.DEADLINE_SECOND, 999);
+  deadline.setHours(CONFIG.DEADLINE.HOUR, CONFIG.DEADLINE.MINUTE, CONFIG.DEADLINE.SECOND, 999);
   
   return deadline;
 }
 
 /**
- * Returns the email for the selected HOD.
+ * HELPER: Email Notifications
  */
+function sendTeacherReceipt(email, teacher, subject, className, fullWeek, weekName) {
+  const body = `Hello ${teacher},\n\nYour ${subject} lesson plan for ${className} has been successfully received and filed for ${fullWeek}.\n\nThank you!`;
+  MailApp.sendEmail({
+    to: email,
+    subject: `Success: Lesson Plan Filed (${weekName})`,
+    body: body
+  });
+}
+
+function sendLateAlert(email, teacher, subject, submittedAt, deadline, daysLate) {
+  const subjectLine = `LATE Submission Alert: ${teacher} (${daysLate} days late)`;
+  const body = `Dear HOD,\n\nThis is an automated alert for a late lesson plan submission:\n\nTeacher: ${teacher}\nSubject: ${subject}\nDays Late: ${daysLate}\nSubmitted: ${submittedAt.toLocaleString()}\nDeadline: ${deadline.toLocaleString()}\n\nThe file has been organized into the weekly folder.`;
+  MailApp.sendEmail(email, subjectLine, body);
+}
+
 function getHodEmail(hodSelection) {
   if (!hodSelection) return null;
   const selectionLower = hodSelection.toLowerCase();
@@ -138,52 +249,21 @@ function getHodEmail(hodSelection) {
 }
 
 /**
- * Sends an email alert to the HOD.
+ * INITIAL SETUP: Run these once from the editor
  */
-function sendLateAlert(email, teacher, subject, submittedAt, deadline, daysLate) {
-  const subjectLine = "LATE Lesson Plan Submission: " + teacher + " (" + daysLate + " days late)";
-  const body = "Dear HOD,\n\n" +
-               "This is an automated alert to inform you that " + teacher + " has submitted a lesson plan LATE.\n\n" +
-               "Subject: " + subject + "\n" +
-               "Days Late: " + daysLate + "\n" +
-               "Submitted At: " + submittedAt.toLocaleString() + "\n" +
-               "Deadline was: " + deadline.toLocaleString() + "\n\n" +
-               "Please check the specific weekly sheet for more details.";
-               
-  MailApp.sendEmail(email, subjectLine, body);
-}
-
-/**
- * Test function to verify logic.
- * You can run this from the Apps Script editor to check the calculations.
- */
-function testSubmission() {
-  const mockWeek = "Week 3: May 4, 2026 – May 10, 2026";
-  const deadline = calculateFridayDeadline(mockWeek);
-  
-  Logger.log("Mock Week: " + mockWeek);
-  Logger.log("Calculated Deadline (Friday): " + deadline.toLocaleString());
-  
-  // Test 1: On Time (Thursday)
-  const onTimeDate = new Date("May 7, 2026 14:00:00");
-  Logger.log("Test 1 (Thursday): " + (onTimeDate > deadline ? "LATE" : "On Time"));
-  
-  // Test 2: Exactly Deadline (Friday 23:59:59)
-  const exactDeadline = new Date("May 8, 2026 23:59:59");
-  Logger.log("Test 2 (Fri 23:59:59): " + (exactDeadline > deadline ? "LATE" : "On Time"));
-  
-  // Test 3: Late (Saturday)
-  const lateDate = new Date("May 9, 2026 08:00:00");
-  Logger.log("Test 3 (Saturday): " + (lateDate > deadline ? "LATE" : "On Time"));
-}
-
-/**
- * Run this function once from the editor to set up the trigger.
- */
-function createTrigger() {
+function createTriggers() {
   const ss = SpreadsheetApp.getActive();
+  
+  // Form Submit Trigger
   ScriptApp.newTrigger('onFormSubmit')
       .forSpreadsheet(ss)
       .onFormSubmit()
+      .create();
+      
+  // Friday Report Trigger (Every Friday at 4 PM)
+  ScriptApp.newTrigger('sendFridayLateReport')
+      .timeBased()
+      .onWeekDay(ScriptApp.WeekDay.FRIDAY)
+      .atHour(16)
       .create();
 }
