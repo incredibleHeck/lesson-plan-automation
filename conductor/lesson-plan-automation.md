@@ -31,7 +31,7 @@ Never commit these values to GitHub.
 
 ## Behaviour notes
 
-- **Deadline:** Friday 23:59:59 script timezone, computed from the week-range string (`CONFIG.DEADLINE` + `calculateFridayDeadline`).
+- **Deadline:** The Friday **immediately before** the week’s start date (parsed from the week-range string), at 23:59:59 in the script timezone (`CONFIG.DEADLINE` + `calculateFridayDeadline`). Teachers must submit before that moment; plans for past weeks show large lateness correctly.
 - **Friday report:** Lateness is recomputed from each row’s timestamp and week string (not read from weekly tabs).
 - **Drive links:** If the configured upload column is empty or lacks a URL, `onFormSubmit` scans all response cells for the first `drive.google.com` string (handles reordered form questions). File IDs are parsed with a regex so `/file/d/…` and `open?id=…` style URLs both work.
 
