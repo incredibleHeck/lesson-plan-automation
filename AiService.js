@@ -88,8 +88,9 @@ function generateAiSummary(fileId, className, subjectName) {
     LESSON PLAN TEXT:
     ${documentText.substring(0, 15000)}`;
 
-    // 4. Call the Gemini API
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+    // 3. Call the Gemini API (Upgraded to the state-of-the-art Gemini 3.1 Pro model)
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+
     
     const payload = {
       "contents": [{"parts": [{"text": prompt}]}],

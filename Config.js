@@ -34,5 +34,13 @@ const CONFIG = {
     MINUTE: 59,
     SECOND: 59
   },
-  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE" // Add your Gemini API key from Google AI Studio
+  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE", // Add your Gemini API key from Google AI Studio
+  
+  // NEW: Telegram Bot Configuration
+  TELEGRAM: {
+    BOT_TOKEN: "PASTE_YOUR_BOT_TOKEN_HERE", 
+    CHAT_ID_VP: "PASTE_VP_CHAT_ID",
+    CHAT_ID_LOWER_HOD: "PASTE_LOWER_HOD_CHAT_ID",
+    CHAT_ID_UPPER_HOD: "PASTE_UPPER_HOD_CHAT_ID"
+  }
 };

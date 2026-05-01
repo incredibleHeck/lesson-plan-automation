@@ -44,7 +44,14 @@ function onFormSubmit(e) {
   const aiAuditText = generateAiSummary(fileId, className, subjectName);
   logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
 
-  // 5. Send Confirmation Receipt to Teacher
+  // 5. Blast the audit report to Telegram!
+  try {
+    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName);
+  } catch (err) {
+    Logger.log("Error sending Telegram alert: " + err.message);
+  }
+
+  // 6. Send Confirmation Receipt to Teacher
   sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString);
 }
 
