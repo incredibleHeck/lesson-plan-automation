@@ -33,5 +33,6 @@ const CONFIG = {
     HOUR: 23,
     MINUTE: 59,
     SECOND: 59
-  }
+  },
+  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE" // Add your Gemini API key from Google AI Studio
 };

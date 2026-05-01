@@ -61,10 +61,12 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
       pdfBlob.setName(`${newBaseName}.pdf`);
       
       // Create the new lightweight PDF inside the correct Class folder
-      classFolder.createFile(pdfBlob);
+      const newPdfFile = classFolder.createFile(pdfBlob);
       
       // Optional but recommended: Trash the heavy original Word/Doc file to keep Drive clean
       originalFile.setTrashed(true);
+      
+      return newPdfFile.getId();
       
     } catch (e) {
       // FALLBACK: If conversion fails (e.g., file type not supported), rename and move normally
@@ -73,6 +75,8 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
       const finalName = newBaseName + (extension ? "." + extension : "");
       originalFile.setName(finalName);
       originalFile.moveTo(classFolder);
+      return fileId;
     }
   }
+  return null;
 }

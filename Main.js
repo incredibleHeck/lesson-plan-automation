@@ -32,15 +32,17 @@ function onFormSubmit(e) {
     }
   }
 
-  // 3. Log to Sheet (Routing & Highlighting)
-  logSubmissionToSheet(responses, weekName, daysLate);
-
-  // 4. Process in Drive (Filing & Renaming)
+  // 3. Process in Drive (Filing & Renaming)
+  let fileId = null;
   try {
-    processDriveFile(fileLink, weekName, className, subjectName, teacherName);
+    fileId = processDriveFile(fileLink, weekName, className, subjectName, teacherName);
   } catch (err) {
     Logger.log("Error processing drive file: " + err.message);
   }
+
+  // 4. Log to Sheet (Routing & Highlighting) with AI Audit (NOW WITH CONTEXT!)
+  const aiAuditText = generateAiSummary(fileId, className, subjectName);
+  logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
 
   // 5. Send Confirmation Receipt to Teacher
   sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString);
