@@ -50,7 +50,8 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
   const weekFolder = getOrCreateFolder(masterFolder, weekName);
   const classFolder = getOrCreateFolder(weekFolder, className);
   
-  const fileId = fileUrl.indexOf("id=") !== -1 ? fileUrl.split("id=")[1] : null;
+  const fileIdMatch = fileUrl.match(/[-\w]{25,}/);
+  const fileId = fileIdMatch ? fileIdMatch[0] : null;
   
   if (fileId) {
     const originalFile = DriveApp.getFileById(fileId);

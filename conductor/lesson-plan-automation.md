@@ -1,50 +1,40 @@
-# Implementation Plan - Automated Lesson Plan Verification
+# Lesson plan automation (Google Apps Script)
 
-Implement a Google Apps Script to automatically flag late lesson plan submissions and notify the respective Head of Department (HOD).
+Automates St. Adelaide lesson plan intake: form submit → Drive filing, weekly sheet rows, Gemini audit, email/Telegram alerts, and a Friday late/missing report.
 
-## Objective
-- Automatically calculate a Friday 23:59:59 GMT deadline based on the "Week Starting" field.
-- Compare the submission timestamp with the deadline.
-- Mark submissions as "LATE" in the "HOD Check" column (Column L).
-- Send email alerts to the appropriate HOD for late submissions.
+## Script layout (clasp)
 
-## Key Files & Context
-- `Code.js`: Main logic implementation.
-- `appsscript.json`: Timezone set to `Africa/Abidjan` (GMT).
+| File | Role |
+|------|------|
+| `Config.js` | `CONFIG`, emails, indices, headers, `DEADLINE`; secrets from Script Properties |
+| `Main.js` | `onFormSubmit`, `createTriggers` |
+| `Utils.js` | Week parsing, Friday deadline, lateness |
+| `DriveService.js` | Master folder, move/rename/PDF, Drive file ID from URL |
+| `SheetService.js` | Weekly tabs and row logging |
+| `FormService.js` | Sync teacher dropdown from Staff Roster |
+| `AiService.js` | OCR + Gemini audit |
+| `EmailService.js` | Receipts, late alerts, Friday report |
+| `TelegramService.js` | Audit alerts to VP/HOD |
+| `appsscript.json` | Runtime V8, timezone (`Africa/Abidjan`, GMT) |
 
-## Proposed Logic
+## Secrets (required): Script Properties
 
-### 1. `onFormSubmit(e)`
-- Triggered automatically on form submission.
-- Extracts `timestamp`, `weekRangeString`, `hodSelection`, `teacherName`, and `subject` from the event object.
-- Updates the spreadsheet's "HOD Check" column.
+In the Apps Script editor: **Project Settings** (gear) → **Script Properties** → add:
 
-### 2. `calculateFridayDeadline(rangeText)`
-- Extracts the start date (e.g., "May 4, 2026") from a string like "Week 3: May 4, 2026 – May 10, 2026".
-- Calculates the Friday of that week.
-- Returns a `Date` object set to 23:59:59.
+- `GEMINI_API_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `CHAT_ID_VP`
+- `CHAT_ID_LOWER_HOD`
+- `CHAT_ID_UPPER_HOD`
 
-### 3. `getHodEmail(hodSelection)`
-- Maps the HOD selection (from Column C) to an email address.
-- Defaults for:
-    - **Mr. Alfred Ashia** (Upper/Secondary)
-    - **Mrs. Abigail Sackey** (Lower Primary)
+Never commit these values to GitHub.
 
-### 4. `sendLateAlert(email, teacher, subject)`
-- Uses `MailApp.sendEmail` to notify the HOD.
+## Behaviour notes
 
-## Implementation Steps
-1. **Update `Code.js`**:
-    - Implement the helper functions (`calculateFridayDeadline`, `getHodEmail`, `sendLateAlert`).
-    - Implement the `onFormSubmit` handler.
-    - Add a `testSubmission` function for manual verification.
-2. **Setup Trigger**:
-    - Instructions for the user to set up the "Installable Trigger" in the Apps Script editor (since triggers cannot be created purely via code push without specific permissions/scopes, but I can provide a `createTrigger` function).
+- **Deadline:** Friday 23:59:59 script timezone, computed from the week-range string (`CONFIG.DEADLINE` + `calculateFridayDeadline`).
+- **Friday report:** Lateness is recomputed from each row’s timestamp and week string (not read from weekly tabs).
+- **Drive links:** File IDs are parsed with a regex so `/file/d/…` and `open?id=…` style URLs both work.
 
-## Verification & Testing
-- Run `testSubmission` with mock data representing:
-    - An "On Time" submission (e.g., Thursday).
-    - a "LATE" submission (e.g., Saturday).
-    - Edge case: Friday 23:59:00 (On Time).
-    - Edge case: Friday 23:59:59 (On Time).
-    - Edge case: Saturday 00:00:01 (LATE).
+## Triggers
+
+Run `createTriggers()` once from the editor to register form-submit and Friday time-based triggers.

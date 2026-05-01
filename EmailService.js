@@ -63,22 +63,24 @@ function sendFridayLateReport() {
     const weekString = data[i][CONFIG.INDICES.WEEK_STARTING];
     const teacher = data[i][CONFIG.INDICES.TEACHER_NAME];
     const classLevel = data[i][CONFIG.INDICES.CLASS];
-    const daysLate = data[i][CONFIG.COLUMNS.DAYS_LATE - 1]; 
     const hodSelection = data[i][CONFIG.INDICES.HOD];
 
-    // Only count them as submitted if it's for the current target week
+    const timestamp = new Date(data[i][CONFIG.INDICES.TIMESTAMP]);
+
     if (weekString === targetWeek) {
       submittedTeachers.push(teacher);
-    }
 
-    // LATE CHECK: Ensure we only flag late submissions for the CURRENT week!
-    if (daysLate > 0 && weekString === targetWeek) {
-      const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
-      
-      if (hodSelection.includes("Alfred Ashia")) {
-        primaryReport.push(entry);
-      } else if (hodSelection.includes("Abigail Sackey")) {
-        secondaryReport.push(entry);
+      const deadline = calculateFridayDeadline(weekString);
+      const daysLate = calculateDaysLate(timestamp, deadline);
+
+      if (daysLate > 0) {
+        const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
+
+        if (hodSelection.includes("Alfred Ashia")) {
+          primaryReport.push(entry);
+        } else if (hodSelection.includes("Abigail Sackey")) {
+          secondaryReport.push(entry);
+        }
       }
     }
   }
