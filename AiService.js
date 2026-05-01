@@ -17,18 +17,21 @@ function generateAiSummary(fileId, className, subjectName) {
 
   try {
     // 1. Extract Text using Drive OCR
+    // This requires the Drive API Advanced Service (v3) to be enabled!
     const file = DriveApp.getFileById(fileId);
     const blob = file.getBlob();
     
     const resource = {
-      title: "Temp_OCR_" + file.getName(),
+      name: "Temp_OCR_" + file.getName(), // 'name' instead of 'title' for Drive API v3
       mimeType: file.getMimeType()
     };
     
-    const tempDocFile = Drive.Files.insert(resource, blob, {ocr: true});
+    // Drive API v3 uses .create instead of .insert
+    const tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
     const tempDoc = DocumentApp.openById(tempDocFile.id);
     const documentText = tempDoc.getBody().getText();
     
+    // Clean up the temporary file immediately
     DriveApp.getFileById(tempDocFile.id).setTrashed(true);
 
     // 2. DYNAMIC CAMBRIDGE CRITERIA: The AI adapts based on the subject
@@ -56,6 +59,12 @@ function generateAiSummary(fileId, className, subjectName) {
       - If this is for lower primary (Year 1 to Year 4), check if Phonics and decoding skills are addressed.
       - Ensure grammar and punctuation are taught in context using authentic texts, rather than just isolated drills.
       - Look for opportunities that promote reading for pleasure.`;
+    }
+    else {
+      subjectCriteria = `
+      GENERAL CAMBRIDGE FOCUS:
+      - Look for clear Learning Objectives, Active Learning (student-led tasks), Differentiation (catering to different abilities), Formative Assessment, and a Plenary/Conclusion.
+      - Ensure the pedagogy encourages critical thinking and avoids rote memorization.`;
     }
 
     // 3. THE MASTER PROMPT
@@ -86,11 +95,11 @@ function generateAiSummary(fileId, className, subjectName) {
     [State ONLY "PASS" or "NEEDS REVISION"]
 
     LESSON PLAN TEXT:
-    ${documentText.substring(0, 15000)}`;
+    ${documentText}`; // Removed 15k limit for Pro model
 
-    // 3. Call the Gemini API (Upgraded to the state-of-the-art Gemini 3.1 Pro model)
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-
+    // 4. Call the Gemini API
+    // Using gemini-1.5-pro as the official mapping for the Pro reasoning tier
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
     
     const payload = {
       "contents": [{"parts": [{"text": prompt}]}],
@@ -122,6 +131,6 @@ function generateAiSummary(fileId, className, subjectName) {
     
   } catch (error) {
     Logger.log("AI Service Error: " + error);
-    return "AI Audit could not process this specific file. Ensure Drive API is enabled.";
+    return "AI Audit could not process this specific file. Ensure Drive API (v3) is enabled.";
   }
 }

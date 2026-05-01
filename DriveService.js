@@ -42,7 +42,8 @@ function getOrCreateFolder(parentFolder, folderName) {
 }
 
 /**
- * Moves file to chronological folder, standardizes the name, and CONVERTS TO PDF.
+ * Moves file to chronological folder structure and standardizes the name.
+ * CONVERTS TO PDF if needed.
  */
 function processDriveFile(fileUrl, weekName, className, subjectName, teacherName) {
   const masterFolder = getRootFolder(); 
@@ -55,24 +56,29 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
     const originalFile = DriveApp.getFileById(fileId);
     const newBaseName = `${subjectName} - ${teacherName}`; 
     
+    // OPTIMIZATION: Check if it is already a PDF
+    if (originalFile.getMimeType() === MimeType.PDF) {
+      originalFile.setName(`${newBaseName}.pdf`);
+      originalFile.moveTo(classFolder);
+      return fileId;
+    }
+    
     try {
-      // THE MAGIC: Ask Google Drive to convert the file into a PDF blob
+      // THE MAGIC: Convert Word/Docs into a PDF blob
       const pdfBlob = originalFile.getAs(MimeType.PDF);
       pdfBlob.setName(`${newBaseName}.pdf`);
       
-      // Create the new lightweight PDF inside the correct Class folder
       const newPdfFile = classFolder.createFile(pdfBlob);
-      
-      // Optional but recommended: Trash the heavy original Word/Doc file to keep Drive clean
-      originalFile.setTrashed(true);
+      originalFile.setTrashed(true); // Keep Drive clean
       
       return newPdfFile.getId();
       
     } catch (e) {
-      // FALLBACK: If conversion fails (e.g., file type not supported), rename and move normally
+      // FALLBACK: If conversion fails, rename and move normally
       const originalName = originalFile.getName();
       const extension = originalName.indexOf('.') !== -1 ? originalName.split('.').pop() : "";
       const finalName = newBaseName + (extension ? "." + extension : "");
+      
       originalFile.setName(finalName);
       originalFile.moveTo(classFolder);
       return fileId;

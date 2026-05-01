@@ -8,14 +8,11 @@
 function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Update local headers to match what we write
-  const currentHeaders = [...CONFIG.HEADERS, "AI Audit Summary"];
-
   let weeklySheet = ss.getSheetByName(weekName);
   if (!weeklySheet) {
     weeklySheet = ss.insertSheet(weekName);
-    weeklySheet.appendRow(currentHeaders);
-    weeklySheet.getRange(1, 1, 1, currentHeaders.length).setFontWeight("bold");
+    weeklySheet.appendRow(CONFIG.HEADERS); // Use headers directly from Config
+    weeklySheet.getRange(1, 1, 1, CONFIG.HEADERS.length).setFontWeight("bold");
     weeklySheet.setFrozenRows(1);
   }
 
@@ -35,6 +32,14 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
   weeklySheet.appendRow(rowData);
   const lastRow = weeklySheet.getLastRow();
   
+  // PRO UPGRADE: Add an interactive dropdown to the "HOD Check" column (Column 8)
+  const hodCheckCell = weeklySheet.getRange(lastRow, 8); 
+  const validationRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["UNREAD", "APPROVED", "REVISION NEEDED"], true)
+    .build();
+  hodCheckCell.setDataValidation(validationRule);
+  
+  // Apply lateness formatting
   if (daysLate > 0) {
     weeklySheet.getRange(lastRow, 1, 1, rowData.length).setBackground("#f4cccc"); // Light Red
   }

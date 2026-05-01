@@ -13,12 +13,19 @@ function sendTelegramMessage(chatId, message) {
     return;
   }
   
+  // Telegram has a hard limit of 4096 characters per message.
+  // We truncate at 4000 just to be safe with HTML tags.
+  let safeMessage = message;
+  if (safeMessage.length > 4000) {
+    safeMessage = safeMessage.substring(0, 4000) + "\n\n<i>...[Message truncated due to length. View full audit in Google Sheets]</i>";
+  }
+  
   const url = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/sendMessage`;
   
   const payload = {
     chat_id: chatId,
-    text: message,
-    parse_mode: "HTML" // Allows us to use bolding and structure in the message
+    text: safeMessage,
+    parse_mode: "HTML" 
   };
   
   const options = {
@@ -56,9 +63,9 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName)
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message);
   }
   
-  // 2. Route the second copy to the respective HOD
+  // 2. Route the second copy to the respective HOD (Typo Fixed: HOD instead of HID)
   if (hodName.includes("Alfred Ashia") && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
-    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HID, message);
+    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message);
   } else if (hodName.includes("Abigail Sackey") && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD, message);
   }

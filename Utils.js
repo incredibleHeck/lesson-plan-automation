@@ -40,17 +40,3 @@ function calculateDaysLate(timestamp, deadline) {
   }
   return 0;
 }
-
-/**
- * Returns the email for the selected HOD
- */
-function getHodEmail(hodSelection) {
-  if (!hodSelection) return null;
-  const selectionLower = hodSelection.toLowerCase();
-  for (let name in CONFIG.HOD_EMAILS) {
-    if (selectionLower.indexOf(name.toLowerCase()) !== -1 || name.toLowerCase().indexOf(selectionLower) !== -1) {
-      return CONFIG.HOD_EMAILS[name];
-    }
-  }
-  return null;
-}

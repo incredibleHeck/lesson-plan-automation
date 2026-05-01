@@ -50,15 +50,13 @@ function sendFridayLateReport() {
   }
   const rosterData = rosterSheet.getDataRange().getValues();
 
-  // Find target week from latest row
+  // Find target week from the most recent submission
   const latestRow = data[data.length - 1];
   const targetWeek = latestRow[CONFIG.INDICES.WEEK_STARTING];
 
   let submittedTeachers = [];
-  const reports = {};
-  for (let hod in CONFIG.HOD_EMAILS) {
-    reports[hod] = [];
-  }
+  let primaryReport = [];
+  let secondaryReport = [];
 
   // 1. Scan submissions for LATE and identifying who submitted
   for (let i = 1; i < data.length; i++) {
@@ -68,16 +66,19 @@ function sendFridayLateReport() {
     const daysLate = data[i][CONFIG.COLUMNS.DAYS_LATE - 1]; 
     const hodSelection = data[i][CONFIG.INDICES.HOD];
 
+    // Only count them as submitted if it's for the current target week
     if (weekString === targetWeek) {
       submittedTeachers.push(teacher);
     }
 
-    if (daysLate > 0) {
+    // LATE CHECK: Ensure we only flag late submissions for the CURRENT week!
+    if (daysLate > 0 && weekString === targetWeek) {
       const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
-      for (let hodName in CONFIG.HOD_EMAILS) {
-        if (hodSelection.includes(hodName)) {
-          reports[hodName].push(entry);
-        }
+      
+      if (hodSelection.includes("Alfred Ashia")) {
+        primaryReport.push(entry);
+      } else if (hodSelection.includes("Abigail Sackey")) {
+        secondaryReport.push(entry);
       }
     }
   }
@@ -92,22 +93,29 @@ function sendFridayLateReport() {
       
       // Route missing teachers based on department in roster
       if (rosterDept === "Lower Primary") {
-        reports["Mr. Alfred Ashia"].push(entry);
+        primaryReport.push(entry);
       } else if (rosterDept === "Upper/Secondary") {
-        reports["Mrs. Abigail Sackey"].push(entry);
+        secondaryReport.push(entry);
       }
     }
   }
 
   // 3. Send Emails (CC'ing VP Theodora Hammond)
-  for (let hod in reports) {
-    if (reports[hod].length > 0) {
-      MailApp.sendEmail({
-        to: CONFIG.HOD_EMAILS[hod],
-        cc: CONFIG.EMAILS.VP_ACADEMICS,
-        subject: `Friday Report: Late & Missing Plans (${hod})`,
-        body: `Hello ${hod},\n\nHere is the status report for ${targetWeek}:\n\n${reports[hod].join("\n")}\n\nPlease check the spreadsheet for details.`
-      });
-    }
+  if (primaryReport.length > 0) {
+    MailApp.sendEmail({
+      to: CONFIG.EMAILS.HOD_LOWER_PRIMARY,
+      cc: CONFIG.EMAILS.VP_ACADEMICS,
+      subject: `Friday Report: Late & Missing Plans (Lower Primary)`,
+      body: `Hello Mr. Ashia,\n\nHere is the status report for ${targetWeek}:\n\n${primaryReport.join("\n")}\n\nPlease check the spreadsheet for details.`
+    });
+  }
+
+  if (secondaryReport.length > 0) {
+    MailApp.sendEmail({
+      to: CONFIG.EMAILS.HOD_UPPER_SECONDARY,
+      cc: CONFIG.EMAILS.VP_ACADEMICS,
+      subject: `Friday Report: Late & Missing Plans (Upper/Secondary)`,
+      body: `Hello Mrs. Sackey,\n\nHere is the status report for ${targetWeek}:\n\n${secondaryReport.join("\n")}\n\nPlease check the spreadsheet for details.`
+    });
   }
 }

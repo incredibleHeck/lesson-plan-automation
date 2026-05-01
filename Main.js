@@ -24,9 +24,15 @@ function onFormSubmit(e) {
   const deadline = calculateFridayDeadline(fullWeekString);
   const daysLate = calculateDaysLate(timestamp, deadline);
 
-  // 2. Immediate HOD Alert if Late
+  // 2. Immediate HOD Alert if Late (Updated Routing Logic)
   if (daysLate > 0) {
-    const hodEmail = getHodEmail(hodName);
+    let hodEmail = null;
+    if (hodName.includes("Alfred Ashia")) {
+      hodEmail = CONFIG.EMAILS.HOD_LOWER_PRIMARY;
+    } else if (hodName.includes("Abigail Sackey")) {
+      hodEmail = CONFIG.EMAILS.HOD_UPPER_SECONDARY;
+    }
+    
     if (hodEmail) {
       sendLateAlert(hodEmail, teacherName, subjectName, timestamp, deadline, daysLate);
     }
@@ -40,7 +46,7 @@ function onFormSubmit(e) {
     Logger.log("Error processing drive file: " + err.message);
   }
 
-  // 4. Log to Sheet (Routing & Highlighting) with AI Audit (NOW WITH CONTEXT!)
+  // 4. Log to Sheet (Routing & Highlighting) with AI Audit 
   const aiAuditText = generateAiSummary(fileId, className, subjectName);
   logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
 

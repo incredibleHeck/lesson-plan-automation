@@ -2,41 +2,29 @@
  * Global Configuration Settings
  */
 const CONFIG = {
-  MASTER_FOLDER_NAME: "2026 Lesson Plans Master", // The system will look for or create this
-  HOD_EMAILS: {
-    "Mr. Alfred Ashia": "alfredashia@stadelaideschools.com",
-    "Mrs. Abigail Sackey": "abigailsackey@stadelaideschool.com"
-  },
+  MASTER_FOLDER_NAME: "2026 Lesson Plans Master", 
   EMAILS: {
     HOD_LOWER_PRIMARY: "alfredashia@stadelaideschools.com", 
-    HOD_UPPER_SECONDARY: "abigailsackey@stadelaideschool.com",
-    VP_ACADEMICS: "theodorahammond@stadelaideschool.com" // Added VP Theodora Hammond
+    HOD_UPPER_SECONDARY: "abigailsackey@stadelaideschools.com", 
+    VP_ACADEMICS: "theodorahammond@stadelaideschools.com" 
   },
   // Indices based on form response array (0-based)
   INDICES: {
-    TIMESTAMP: 0,      // Col A
-    WEEK_STARTING: 1,  // Col B
-    HOD: 2,            // Col C
-    TEACHER_NAME: 3,   // Col D
-    CLASS: 4,          // Col E
-    SUBJECT: 5,        // Col F
-    UPLOAD_LINK: 6,    // Col G
-    TEACHER_EMAIL: 7   // Col H
+    TIMESTAMP: 0,      
+    WEEK_STARTING: 1,  
+    HOD: 2,            
+    TEACHER_NAME: 3,   
+    CLASS: 4,          
+    SUBJECT: 5,        
+    UPLOAD_LINK: 6,    
+    TEACHER_EMAIL: 7   
   },
-  // Column positions for writing back to sheets
   COLUMNS: {
-    HOD_CHECK: 10,     // Col J
-    DAYS_LATE: 11      // Col K
+    HOD_CHECK: 10,     // 1-based index for sheets (Col J)
+    DAYS_LATE: 11      // 1-based index for sheets (Col K)
   },
-  HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late"],
-  DEADLINE: {
-    HOUR: 23,
-    MINUTE: 59,
-    SECOND: 59
-  },
-  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE", // Add your Gemini API key from Google AI Studio
-  
-  // NEW: Telegram Bot Configuration
+  HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late", "AI Audit"],
+  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE", 
   TELEGRAM: {
     BOT_TOKEN: "PASTE_YOUR_BOT_TOKEN_HERE", 
     CHAT_ID_VP: "PASTE_VP_CHAT_ID",
