@@ -29,8 +29,8 @@ function generateAiSummary(fileId, className, subjectName) {
     // Create the temporary Google Doc with OCR enabled
     const tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
     
-    // CRITICAL: Pause for 3 seconds to allow OCR processing time
-    Utilities.sleep(3000);
+    // CRITICAL: Pause for 6 seconds to allow OCR processing time
+    Utilities.sleep(6000);
     
     const tempDoc = DocumentApp.openById(tempDocFile.id);
     const documentText = tempDoc.getBody().getText();
