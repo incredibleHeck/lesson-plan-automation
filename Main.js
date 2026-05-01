@@ -17,8 +17,14 @@ function onFormSubmit(e) {
   const teacherName = responses[CONFIG.INDICES.TEACHER_NAME];
   const className = responses[CONFIG.INDICES.CLASS];
   const subjectName = responses[CONFIG.INDICES.SUBJECT];
-  const fileLink = responses[CONFIG.INDICES.UPLOAD_LINK]; 
   const teacherEmail = responses[CONFIG.INDICES.TEACHER_EMAIL];
+
+  let fileLink = responses[CONFIG.INDICES.UPLOAD_LINK];
+  if (!fileLink || typeof fileLink !== "string" || !fileLink.includes("drive.google.com")) {
+    fileLink = responses.find(function (v) {
+      return typeof v === "string" && v.includes("drive.google.com");
+    }) || null;
+  }
   
   const weekName = extractWeekName(fullWeekString);
   const deadline = calculateFridayDeadline(fullWeekString);
