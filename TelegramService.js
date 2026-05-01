@@ -49,14 +49,23 @@ function sendTelegramMessage(chatId, message) {
  * @param {string} subjectName The subject name.
  * @param {string} auditText The audit text from Gemini.
  * @param {string} hodName The name of the HOD for routing.
+ * @param {Date} timestamp Form submission time.
+ * @param {string} latenessStatus Human-readable on-time / late line for Telegram.
  */
-function sendAuditAlert(teacherName, className, subjectName, auditText, hodName) {
-  // Format the message for a clean mobile reading experience
-  const message = `<b>🚨 New Lesson Plan Audit</b>\n\n` +
+function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus) {
+
+  const formattedTime = Utilities.formatDate(timestamp, "Africa/Accra", "MMM d, yyyy 'at' h:mm a");
+
+  let cleanAudit = auditText.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  cleanAudit = cleanAudit.replace(/\*/g, "");
+
+  const message = `<b>🚨 Lesson Plan Submitted</b>\n\n` +
                   `<b>Teacher:</b> ${teacherName}\n` +
                   `<b>Class:</b> ${className}\n` +
-                  `<b>Subject:</b> ${subjectName}\n\n` +
-                  `<b>AI Audit Report:</b>\n${auditText}`;
+                  `<b>Subject:</b> ${subjectName}\n` +
+                  `<b>Submitted:</b> ${formattedTime}\n` +
+                  `<b>Status:</b> ${latenessStatus}\n\n` +
+                  `<b>🤖 AI Audit:</b>\n${cleanAudit}`;
   
   // 1. Always send a copy to VP Theodora Hammond
   if (CONFIG.TELEGRAM.CHAT_ID_VP) {

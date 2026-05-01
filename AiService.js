@@ -71,42 +71,38 @@ function generateAiSummary(fileId, className, subjectName) {
       - Ensure the pedagogy encourages critical thinking and avoids rote memorization.`;
     }
 
-    // 3. THE MASTER PROMPT
-    const prompt = `You are a strict but constructive Cambridge Curriculum Coordinator and Academic Auditor for VP Theodora Hammond at St. Adelaide International School.
-    
-    You are reviewing a ${subjectName} lesson plan specifically written for ${className}. 
-    
-    CRITICAL CONTEXT: 
-    In our system, "Year 1" is Grade 1 (approx 5-6 years old), "Year 2" is Grade 2 (approx 6-7 years old), scaling up to Year 12. Adjust your academic expectations precisely to the age group of ${className}.
+    const systemInstruction =
+      "You are a Cambridge-certified academic auditor for St. Adelaide Schools. " +
+      "Review this lesson plan and provide an EXTREMELY concise audit. " +
+      "CRITICAL RULES: " +
+      "1. DO NOT write paragraphs. You must use short, punchy bullet points. " +
+      "2. Maximum of 2 bullet points per section. " +
+      "3. Structure your response exactly like this:\n\n" +
+      "🏆 STRENGTHS:\n• [Point 1]\n• [Point 2]\n\n" +
+      "🚨 FLAGS:\n• [Point 1]\n• [Point 2]\n\n" +
+      "✅ STATUS: [Approved or Needs Revision]";
 
-    EVALUATION CRITERIA:
-    1. Cambridge Standards: Review the text against these specific requirements: ${subjectCriteria}
-    2. Age Appropriateness: Are the vocabulary, duration of tasks, and cognitive demands suitable for ${className}? Flag it if it is too advanced or too childish.
-    3. Pedagogical Flaws: Look for Active Learning. Flag passive learning (too much teacher-talking time) or poorly defined success criteria.
+    const userPrompt =
+      `Audit this ${subjectName} lesson plan for ${className}.
 
-    Format your response EXACTLY using this template:
+Context: "Year 1" is Grade 1 (approx ages 5–6), through Year 12. Expectations must match the age band for ${className}.
+Apply active learning and age-appropriateness; flag passive teacher-talk or vague success criteria when relevant.
 
-    📊 EXECUTIVE SUMMARY:
-    [1-2 sentences summarizing the core lesson and objective.]
+Cambridge criteria for this subject:
+${subjectCriteria}
 
-    🧠 AGE & CAMBRIDGE ALIGNMENT:
-    [Brief paragraph: Is it appropriate for ${className}? Are the specific Cambridge methodologies for ${subjectName} visible? Explain why or why not.]
+LESSON PLAN TEXT:
+${documentText}`;
 
-    🚨 FLAGS & MISSING ELEMENTS:
-    [Bullet points listing any missing Cambridge sections, missing safety protocols (for science), missing active learning, or pedagogical flaws. If perfect, write "None. All required sections present."]
-
-    ✅ COMPLIANCE STATUS:
-    [State ONLY "PASS" or "NEEDS REVISION"]
-
-    LESSON PLAN TEXT:
-    ${documentText}`;
-
-    // 4. Call the Gemini API
+    // 3. Call the Gemini API
     // Upgraded to gemini-3.1-pro-preview for state-of-the-art Cambridge-style audits.
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
     
     const payload = {
-      "contents": [{"parts": [{"text": prompt}]}],
+      "systemInstruction": {
+        "parts": [{"text": systemInstruction}]
+      },
+      "contents": [{"parts": [{"text": userPrompt}]}],
       "generationConfig": {
         "temperature": 0.2 // Keeps the AI highly analytical and strict
       }

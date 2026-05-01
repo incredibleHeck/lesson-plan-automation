@@ -29,6 +29,7 @@ function onFormSubmit(e) {
   const weekName = extractWeekName(fullWeekString);
   const deadline = calculateFridayDeadline(fullWeekString);
   const daysLate = calculateDaysLate(timestamp, deadline);
+  const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
 
   // 2. Immediate HOD Alert if Late (Updated Routing Logic)
   if (daysLate > 0) {
@@ -58,7 +59,7 @@ function onFormSubmit(e) {
 
   // 5. Blast the audit report to Telegram!
   try {
-    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName);
+    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus);
   } catch (err) {
     Logger.log("Error sending Telegram alert: " + err.message);
   }
