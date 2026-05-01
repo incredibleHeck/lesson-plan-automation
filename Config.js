@@ -24,11 +24,11 @@ const CONFIG = {
     DAYS_LATE: 11      // 1-based index for sheets (Col K)
   },
   HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late", "AI Audit"],
-  GEMINI_API_KEY: "PASTE_YOUR_API_KEY_HERE", 
+  GEMINI_API_KEY: "AIzaSyCmPc-roorT0ylDfKq4diw4Sex-mGjRePY", 
   TELEGRAM: {
-    BOT_TOKEN: "PASTE_YOUR_BOT_TOKEN_HERE", 
-    CHAT_ID_VP: "PASTE_VP_CHAT_ID",
-    CHAT_ID_LOWER_HOD: "PASTE_LOWER_HOD_CHAT_ID",
+    BOT_TOKEN: "8649215464:AAGMxsC2YgBenEu_NNa9VIowU4wUZ-5uOHs", 
+    CHAT_ID_VP: "900741421",
+    CHAT_ID_LOWER_HOD: "6920642515",
     CHAT_ID_UPPER_HOD: "PASTE_UPPER_HOD_CHAT_ID"
   }
 };
