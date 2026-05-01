@@ -22,12 +22,16 @@ function generateAiSummary(fileId, className, subjectName) {
     const blob = file.getBlob();
     
     const resource = {
-      name: "Temp_OCR_" + file.getName(), // 'name' instead of 'title' for Drive API v3
-      mimeType: file.getMimeType()
+      name: "Temp_OCR_" + file.getName(), 
+      mimeType: MimeType.GOOGLE_DOCS // FORCE CONVERSION to Google Doc so DocumentApp can read it
     };
     
-    // Drive API v3 uses .create instead of .insert
+    // Create the temporary Google Doc with OCR enabled
     const tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
+    
+    // CRITICAL: Pause for 3 seconds to allow OCR processing time
+    Utilities.sleep(3000);
+    
     const tempDoc = DocumentApp.openById(tempDocFile.id);
     const documentText = tempDoc.getBody().getText();
     
@@ -131,6 +135,6 @@ function generateAiSummary(fileId, className, subjectName) {
     
   } catch (error) {
     Logger.log("AI Service Error: " + error);
-    return "AI Audit could not process this specific file. Ensure Drive API (v3) is enabled.";
+    return "CRITICAL ERROR: " + error.message;
   }
 }
