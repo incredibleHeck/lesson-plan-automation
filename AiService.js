@@ -99,11 +99,11 @@ function generateAiSummary(fileId, className, subjectName) {
     [State ONLY "PASS" or "NEEDS REVISION"]
 
     LESSON PLAN TEXT:
-    ${documentText}`; // Removed 15k limit for Pro model
+    ${documentText}`;
 
     // 4. Call the Gemini API
-    // Using gemini-1.5-pro as the official mapping for the Pro reasoning tier
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+    // Upgraded to gemini-3.1-pro-preview for state-of-the-art Cambridge-style audits.
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
     
     const payload = {
       "contents": [{"parts": [{"text": prompt}]}],
@@ -116,25 +116,29 @@ function generateAiSummary(fileId, className, subjectName) {
       "method": "post",
       "contentType": "application/json",
       "payload": JSON.stringify(payload),
-      "muteHttpExceptions": true
+      "muteHttpExceptions": true // CRITICAL FIX: Allows us to read the error body
     };
     
     const response = UrlFetchApp.fetch(apiUrl, options);
-    const data = JSON.parse(response.getContentText());
-    
-    if (data.error) {
-      Logger.log("API Error: " + data.error.message);
-      return "AI Audit Failed: API Error.";
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    if (responseCode !== 200) {
+      Logger.log("Gemini API Error: " + responseText);
+      const errorData = JSON.parse(responseText);
+      const errorMessage = errorData.error ? errorData.error.message : "Unknown API Error";
+      return "GEMINI REJECTED: " + errorMessage; 
     }
 
-    if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
-      return data.candidates[0].content.parts[0].text;
+    const json = JSON.parse(responseText);
+    if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
+      return json.candidates[0].content.parts[0].text;
     } else {
       return "AI Audit Error: No response content.";
     }
     
   } catch (error) {
     Logger.log("AI Service Error: " + error);
-    return "CRITICAL ERROR: " + error.message;
+    return "CRITICAL SCRIPT ERROR: " + error.message;
   }
 }
