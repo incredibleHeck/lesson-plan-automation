@@ -42,27 +42,37 @@ function getOrCreateFolder(parentFolder, folderName) {
 }
 
 /**
- * Moves file to chronological folder structure and standardizes the name
+ * Moves file to chronological folder, standardizes the name, and CONVERTS TO PDF.
  */
 function processDriveFile(fileUrl, weekName, className, subjectName, teacherName) {
-  // Use our new self-creating root folder function
   const masterFolder = getRootFolder(); 
-  
-  // Chronological path: Week -> Class
   const weekFolder = getOrCreateFolder(masterFolder, weekName);
   const classFolder = getOrCreateFolder(weekFolder, className);
   
   const fileId = fileUrl.indexOf("id=") !== -1 ? fileUrl.split("id=")[1] : null;
-
+  
   if (fileId) {
-    const file = DriveApp.getFileById(fileId);
+    const originalFile = DriveApp.getFileById(fileId);
+    const newBaseName = `${subjectName} - ${teacherName}`; 
     
-    // Auto-Rename: [Subject] - [Teacher Name]
-    const originalName = file.getName();
-    const extension = originalName.indexOf('.') !== -1 ? originalName.split('.').pop() : "";
-    const newName = subjectName + " - " + teacherName + (extension ? "." + extension : "");
-    file.setName(newName);
-    
-    file.moveTo(classFolder);
+    try {
+      // THE MAGIC: Ask Google Drive to convert the file into a PDF blob
+      const pdfBlob = originalFile.getAs(MimeType.PDF);
+      pdfBlob.setName(`${newBaseName}.pdf`);
+      
+      // Create the new lightweight PDF inside the correct Class folder
+      classFolder.createFile(pdfBlob);
+      
+      // Optional but recommended: Trash the heavy original Word/Doc file to keep Drive clean
+      originalFile.setTrashed(true);
+      
+    } catch (e) {
+      // FALLBACK: If conversion fails (e.g., file type not supported), rename and move normally
+      const originalName = originalFile.getName();
+      const extension = originalName.indexOf('.') !== -1 ? originalName.split('.').pop() : "";
+      const finalName = newBaseName + (extension ? "." + extension : "");
+      originalFile.setName(finalName);
+      originalFile.moveTo(classFolder);
+    }
   }
 }
