@@ -18,36 +18,23 @@ function extractWeekName(fullWeekString) {
 function calculateFridayDeadline(rangeText) {
   if (!rangeText) return null;
   
-  // Extracts the exact start date from your week string 
-  // (e.g., extracts "May 4, 2026" from "Week 3: May 4, 2026 - May 10, 2026")
+  // Safely extract the date string (e.g., "May 4, 2026")
   const dateMatch = rangeText.match(/([A-Z][a-z]+ \d{1,2}, \d{4})/);
-  if (!dateMatch) return null;
+  if (!dateMatch) {
+    Logger.log("Warning: Could not parse deadline date from string: " + rangeText);
+    return null; 
+  }
   
   const startDate = new Date(dateMatch[1]);
   if (isNaN(startDate.getTime())) return null;
 
   const deadline = new Date(startDate);
   
-  // Figure out what day of the week the start date is (0 = Sunday, 1 = Monday, etc.)
+  // Math Hack: Calculate days to subtract to get to the preceding Friday (Friday = 5)
+  // GetDay returns 0 (Sun) to 6 (Sat).
   const startDayOfWeek = startDate.getDay();
-  let daysToSubtract;
-
-  // Calculate exactly how many days to go backward to hit the preceding Friday
-  if (startDayOfWeek === 1) { 
-    daysToSubtract = 3; // Monday -> go back 3 days to Friday
-  } else if (startDayOfWeek === 2) {
-    daysToSubtract = 4; // Tuesday -> go back 4 days
-  } else if (startDayOfWeek === 3) {
-    daysToSubtract = 5; // Wednesday -> go back 5 days
-  } else if (startDayOfWeek === 4) {
-    daysToSubtract = 6; // Thursday -> go back 6 days
-  } else if (startDayOfWeek === 5) {
-    daysToSubtract = 7; // Friday -> go back 7 days (the previous Friday)
-  } else if (startDayOfWeek === 6) {
-    daysToSubtract = 1; // Saturday -> go back 1 day
-  } else {
-    daysToSubtract = 2; // Sunday -> go back 2 days
-  }
+  let daysToSubtract = (startDayOfWeek + 2) % 7; 
+  if (daysToSubtract === 0) daysToSubtract = 7; // If it's a Friday, go back exactly 1 week
 
   // Set the deadline to the previous Friday
   deadline.setDate(startDate.getDate() - daysToSubtract);
@@ -77,9 +64,7 @@ function calculateDaysLate(submissionDate, deadlineDate) {
  */
 function parseGhanaianDate(dateString) {
   if (!dateString) return new Date();
-
   if (dateString instanceof Date) return dateString;
-
   if (typeof dateString !== "string") return new Date(dateString);
 
   const parts = dateString.split(" ");
@@ -87,12 +72,11 @@ function parseGhanaianDate(dateString) {
 
   if (dateParts.length === 3) {
     const day = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
+    const month = parseInt(dateParts[1], 10) - 1; // JS Months are 0-indexed
     const year = parseInt(dateParts[2], 10);
 
-    let hours = 0;
-    let minutes = 0;
-    let seconds = 0;
+    let hours = 0, minutes = 0, seconds = 0;
+    
     if (parts[1]) {
       const timeParts = parts[1].split(":");
       hours = parseInt(timeParts[0], 10);

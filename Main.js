@@ -10,16 +10,16 @@ function onFormSubmit(e) {
   
   const responses = e.values; 
   
-  // 1. Data Extraction (DD/MM/YYYY from form/sheet — avoid US MDY mis-parse)
-  const timestamp = parseGhanaianDate(responses[CONFIG.INDICES.TIMESTAMP]);
-  const fullWeekString = responses[CONFIG.INDICES.WEEK_STARTING]; 
-  const hodName = responses[CONFIG.INDICES.HOD];
-  const teacherName = responses[CONFIG.INDICES.TEACHER_NAME];
-  const className = responses[CONFIG.INDICES.CLASS];
-  const subjectName = responses[CONFIG.INDICES.SUBJECT];
-  const teacherEmail = responses[CONFIG.INDICES.TEACHER_EMAIL];
+  // 1. Data Extraction (DD/MM/YYYY from form/sheet)
+  const timestamp = parseGhanaianDate(responses[CONFIG.FORM_INDICES.TIMESTAMP]);
+  const fullWeekString = responses[CONFIG.FORM_INDICES.WEEK_STARTING]; 
+  const hodName = responses[CONFIG.FORM_INDICES.HOD];
+  const teacherName = responses[CONFIG.FORM_INDICES.TEACHER_NAME];
+  const className = responses[CONFIG.FORM_INDICES.CLASS];
+  const subjectName = responses[CONFIG.FORM_INDICES.SUBJECT];
+  const teacherEmail = responses[CONFIG.FORM_INDICES.TEACHER_EMAIL];
 
-  let fileLink = responses[CONFIG.INDICES.UPLOAD_LINK];
+  let fileLink = responses[CONFIG.FORM_INDICES.UPLOAD_LINK];
   if (!fileLink || typeof fileLink !== "string" || !fileLink.includes("drive.google.com")) {
     fileLink = responses.find(function (v) {
       return typeof v === "string" && v.includes("drive.google.com");
@@ -35,9 +35,9 @@ function onFormSubmit(e) {
   if (daysLate > 0) {
     let hodEmail = null;
     if (hodName.includes("Alfred Ashia")) {
-      hodEmail = CONFIG.EMAILS.HOD_LOWER_PRIMARY;
+      hodEmail = CONFIG.HOD_EMAILS.LOWER;
     } else if (hodName.includes("Abigail Sackey")) {
-      hodEmail = CONFIG.EMAILS.HOD_UPPER_SECONDARY;
+      hodEmail = CONFIG.HOD_EMAILS.UPPER;
     }
     
     if (hodEmail) {
@@ -83,9 +83,20 @@ function doPost(e) {
     return HtmlService.createHtmlOutput("OK");
   }
 
-  const update = JSON.parse(e.postData.contents);
+  // 1. Initialize the Lock Service to prevent database collisions
+  const lock = LockService.getScriptLock();
+  
+  // Wait for up to 10 seconds for other instances to finish their database writes
+  try {
+    lock.waitLock(10000); 
+  } catch (err) {
+    Logger.log("Lock Timeout: Too many simultaneous webhook requests.");
+    return HtmlService.createHtmlOutput("OK"); // Exit gracefully if the queue is full
+  }
 
   try {
+    const update = JSON.parse(e.postData.contents);
+
     // Route 1: HOD Button Click
     if (update.callback_query) {
       handleCallbackQuery(update.callback_query);
@@ -96,6 +107,9 @@ function doPost(e) {
     }
   } catch (err) {
     Logger.log("Webhook Error: " + err.message);
+  } finally {
+    // ALWAYS release the lock when finished, even if an error occurred!
+    lock.releaseLock();
   }
 
   return HtmlService.createHtmlOutput("OK");

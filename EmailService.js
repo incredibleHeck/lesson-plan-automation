@@ -25,7 +25,7 @@ function sendLateAlert(email, teacher, subject, submittedAt, deadline, daysLate)
   const body = `Dear HOD,\n\nThis is an automated alert for a late lesson plan submission:\n\nTeacher: ${teacher}\nSubject: ${subject}\nDays Late: ${daysLate}\nSubmitted: ${submittedAt.toLocaleString()}\nDeadline: ${deadline.toLocaleString()}\n\nThe file has been organized into the weekly folder.`;
   MailApp.sendEmail({
     to: email,
-    cc: CONFIG.EMAILS.VP_ACADEMICS, // Also notify VP of immediate late submissions
+    cc: CONFIG.HOD_EMAILS.VP, // notify VP of immediate late submissions
     subject: subjectLine,
     body: body
   });
@@ -42,17 +42,17 @@ function sendFridayLateReport() {
   if (!rawSheet) return;
   const data = rawSheet.getDataRange().getValues();
   
-  // 2. Get the Staff Roster Data
-  const rosterSheet = ss.getSheetByName("Teachers Roster");
+  // 2. Get the Staff Roster Data (Fixed Tab Name)
+  const rosterSheet = ss.getSheetByName("Staff Roster");
   if (!rosterSheet) {
-    Logger.log("Error: Please create a 'Teachers Roster' tab.");
+    Logger.log("Error: Could not find the 'Staff Roster' tab.");
     return;
   }
   const rosterData = rosterSheet.getDataRange().getValues();
 
   // Find target week from the most recent submission
   const latestRow = data[data.length - 1];
-  const targetWeek = latestRow[CONFIG.INDICES.WEEK_STARTING];
+  const targetWeek = latestRow[CONFIG.FORM_INDICES.WEEK_STARTING];
 
   let submittedTeachers = [];
   let primaryReport = [];
@@ -60,12 +60,15 @@ function sendFridayLateReport() {
 
   // 1. Scan submissions for LATE and identifying who submitted
   for (let i = 1; i < data.length; i++) {
-    const weekString = data[i][CONFIG.INDICES.WEEK_STARTING];
-    const teacher = data[i][CONFIG.INDICES.TEACHER_NAME];
-    const classLevel = data[i][CONFIG.INDICES.CLASS];
-    const hodSelection = data[i][CONFIG.INDICES.HOD];
+    const timestampStr = data[i][CONFIG.FORM_INDICES.TIMESTAMP];
+    if (!timestampStr) continue; // Skip empty rows
 
-    const timestamp = parseGhanaianDate(data[i][CONFIG.INDICES.TIMESTAMP]);
+    const weekString = data[i][CONFIG.FORM_INDICES.WEEK_STARTING];
+    const teacher = data[i][CONFIG.FORM_INDICES.TEACHER_NAME];
+    const classLevel = data[i][CONFIG.FORM_INDICES.CLASS];
+    const hodSelection = data[i][CONFIG.FORM_INDICES.HOD];
+
+    const timestamp = parseGhanaianDate(timestampStr);
 
     if (weekString === targetWeek) {
       submittedTeachers.push(teacher);
@@ -73,9 +76,10 @@ function sendFridayLateReport() {
       const deadline = calculateFridayDeadline(weekString);
       const daysLate = calculateDaysLate(timestamp, deadline);
 
+      // LATE CHECK: Ensure we only flag late submissions for the CURRENT week!
       if (daysLate > 0) {
         const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
-
+        
         if (hodSelection.includes("Alfred Ashia")) {
           primaryReport.push(entry);
         } else if (hodSelection.includes("Abigail Sackey")) {
@@ -85,19 +89,19 @@ function sendFridayLateReport() {
     }
   }
 
-  // 2. Ghost Tracker: Scan roster for MISSING
+  // 2. Ghost Tracker: Scan roster for MISSING (Fixed Column Mapping)
   for (let i = 1; i < rosterData.length; i++) {
     const rosterTeacher = rosterData[i][0]; // Col A: Teacher Name
-    const hodEmail = rosterData[i][2];      // Col C: HOD Email
+    const department = rosterData[i][1] ? rosterData[i][1].toString().toLowerCase() : ""; // Col B: Department
 
     if (rosterTeacher && !submittedTeachers.includes(rosterTeacher)) {
       const entry = `❌ MISSING: ${rosterTeacher} (No submission for ${extractWeekName(targetWeek)})`;
       
-      // Route missing teachers based on HOD email
-      if (hodEmail === CONFIG.EMAILS.HOD_LOWER_PRIMARY) {
-        primaryReport.push(entry);
-      } else if (hodEmail === CONFIG.EMAILS.HOD_UPPER_SECONDARY) {
+      // Route based on department string
+      if (department.includes("upper") || department.includes("secondary")) {
         secondaryReport.push(entry);
+      } else {
+        primaryReport.push(entry);
       }
     }
   }
@@ -105,8 +109,8 @@ function sendFridayLateReport() {
   // 3. Send Emails (CC'ing VP Theodora Hammond)
   if (primaryReport.length > 0) {
     MailApp.sendEmail({
-      to: CONFIG.EMAILS.HOD_LOWER_PRIMARY,
-      cc: CONFIG.EMAILS.VP_ACADEMICS,
+      to: CONFIG.HOD_EMAILS.LOWER,
+      cc: CONFIG.HOD_EMAILS.VP,
       subject: `Friday Report: Late & Missing Plans (Lower Primary)`,
       body: `Hello Mr. Ashia,\n\nHere is the status report for ${targetWeek}:\n\n` + primaryReport.join("\n") + `\n\nPlease check the spreadsheet for details.`
     });
@@ -114,8 +118,8 @@ function sendFridayLateReport() {
 
   if (secondaryReport.length > 0) {
     MailApp.sendEmail({
-      to: CONFIG.EMAILS.HOD_UPPER_SECONDARY,
-      cc: CONFIG.EMAILS.VP_ACADEMICS,
+      to: CONFIG.HOD_EMAILS.UPPER,
+      cc: CONFIG.HOD_EMAILS.VP,
       subject: `Friday Report: Late & Missing Plans (Upper/Secondary)`,
       body: `Hello Mrs. Sackey,\n\nHere is the status report for ${targetWeek}:\n\n` + secondaryReport.join("\n") + `\n\nPlease check the spreadsheet for details.`
     });
@@ -152,7 +156,7 @@ function sendRevisionEmail(teacherEmail, teacherName, weekName, auditResult) {
   
   MailApp.sendEmail({
     to: teacherEmail,
-    cc: CONFIG.EMAILS.VP_ACADEMICS, // Oversight for the VP
+    cc: CONFIG.HOD_EMAILS.VP, // Oversight for the VP
     subject: subject,
     body: body
   });

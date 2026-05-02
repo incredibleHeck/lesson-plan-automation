@@ -1,5 +1,7 @@
 /**
  * Services for Gemini AI interactions
+ * NOTE: This service requires the "Drive API" Advanced Service (v3) to be enabled
+ * in the Apps Script Editor (Services > + > Drive API).
  */
 
 /**
@@ -96,9 +98,11 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     "📊 RATING: [Float]/10\n" +
     "✅ STATUS: [Approved or Needs Revision]";
 
-  let userPrompt = `Audit this ${subjectName} lesson plan for ${gradeLevel}.\n\nCURRENT LESSON PLAN TEXT:\n${currentText}`;
+  // Apply a 15,000 character safety cap to prevent payload/token crashes
+  const safeCurrentText = currentText ? currentText.substring(0, 15000) : "No text found.";
+  let userPrompt = `Audit this ${subjectName} lesson plan for ${gradeLevel}.\n\nCURRENT LESSON PLAN TEXT:\n${safeCurrentText}`;
 
-  // Inject the previous week's context if it exists
+  // Inject the previous week's context if it exists (capped at 3,000 chars)
   if (previousText) {
     userPrompt = "CONTEXT: The teacher taught the following in the PREVIOUS week's lesson:\n" + 
                  previousText.substring(0, 3000) + 
@@ -156,36 +160,58 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
 }
 
 /**
- * Extracts text from a PDF file using Drive OCR
+ * Extracts text from a PDF file using Drive OCR (Requires Advanced Drive Service enabled)
  * @param {string} fileId The ID of the file to extract text from.
  * @returns {string} The extracted text.
  */
 function extractTextFromPdf(fileId) {
   if (!fileId) return null;
+  
+  let tempDocFile = null;
   try {
     const file = DriveApp.getFileById(fileId);
     const blob = file.getBlob();
     
     const resource = {
-      name: "Temp_OCR_" + file.getName(),
+      title: "Temp_OCR_" + file.getName(), // Compatibility for Drive API v2
+      name: "Temp_OCR_" + file.getName(),  // Compatibility for Drive API v3
       mimeType: MimeType.GOOGLE_DOCS // FORCE CONVERSION to Google Doc so DocumentApp can read it
     };
     
     // Create the temporary Google Doc with OCR enabled
-    const tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
+    tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
     
-    // CRITICAL: Pause for 6 seconds to allow OCR processing time
-    Utilities.sleep(6000);
+    let text = "";
+    let attempts = 0;
+    const maxAttempts = 3;
     
-    const tempDoc = DocumentApp.openById(tempDocFile.id);
-    const text = tempDoc.getBody().getText();
-    
-    // Clean up the temporary file immediately
-    DriveApp.getFileById(tempDocFile.id).setTrashed(true);
+    // Smart Retry Loop: Try up to 3 times, waiting 4 seconds each time (Max 12s)
+    // Handles server lag without fixed long delays for fast jobs.
+    while (attempts < maxAttempts) {
+      Utilities.sleep(4000); 
+      try {
+        const tempDoc = DocumentApp.openById(tempDocFile.id);
+        text = tempDoc.getBody().getText();
+        if (text && text.trim().length > 0) break; // Success!
+      } catch (e) {
+        // Document might not be fully ready yet, let the loop try again
+      }
+      attempts++;
+    }
     
     return text;
+    
   } catch (err) {
     Logger.log("OCR Error: " + err.message);
     return null;
+  } finally {
+    // ALWAYS clean up the temporary file immediately to keep Drive organized
+    if (tempDocFile && tempDocFile.id) {
+      try {
+        DriveApp.getFileById(tempDocFile.id).setTrashed(true);
+      } catch (cleanupErr) {
+        Logger.log("Failed to trash temp OCR file: " + cleanupErr.message);
+      }
+    }
   }
 }

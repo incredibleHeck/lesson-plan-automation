@@ -7,19 +7,27 @@ const scriptProps = PropertiesService.getScriptProperties();
 const CONFIG = {
   MASTER_FOLDER_NAME: "2026 Lesson Plans Master",
   
-  // HOD Emails for routing (since they are not in the Staff Roster)
+  // These are used for automated email routing
   HOD_EMAILS: {
-    "LOWER": "alfredashia@stadelaideschools.com", 
-    "UPPER": "abigailsackey@stadelaideschool.com"
+    LOWER: "alfredashia@stadelaideschools.com",
+    UPPER: "abigailsackey@stadelaideschools.com",
+    VP: "theodorahammond@stadelaideschools.com"
   },
 
-  EMAILS: {
-    HOD_LOWER_PRIMARY: "alfredashia@stadelaideschools.com",
-    HOD_UPPER_SECONDARY: "abigailsackey@stadelaideschool.com",
-    VP_ACADEMICS: "theodorahammond@stadelaideschools.com"
+  // 1. INDICES FOR INCOMING FORM SUBMISSION (e.values array)
+  // Ensure these match the exact column order of the "Form responses 1" tab
+  FORM_INDICES: {
+    TIMESTAMP: 0,
+    WEEK_STARTING: 1,
+    HOD: 2,
+    TEACHER_NAME: 3,
+    CLASS: 4,
+    SUBJECT: 5,
+    UPLOAD_LINK: 6,
+    TEACHER_EMAIL: 7 
   },
 
-  // Indices based on the actual CSV column structure (0-based)
+  // 2. INDICES FOR WEEKLY TABS 
   // [Timestamp, Week Range, HOD, Teacher Name, Class, Subject, Upload Link, HOD Check, Days Late, AI Audit]
   INDICES: {
     TIMESTAMP: 0,
@@ -29,13 +37,12 @@ const CONFIG = {
     CLASS: 4,
     SUBJECT: 5,
     UPLOAD_LINK: 6,
-    HOD_CHECK: 7,
+    HOD_CHECK: 7, 
     DAYS_LATE: 8,
-    AI_AUDIT: 9,
-    TEACHER_EMAIL: 7 // This index is used for the main responses sheet, not weekly tabs
+    AI_AUDIT: 9 
   },
 
-  // Column numbers for writing back to sheets (1-based)
+  // Column number for writing back to sheets (1-based)
   STATUS_COLUMN_NUMBER: 8, // Column H: HOD Check
   
   HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late", "AI Audit"],

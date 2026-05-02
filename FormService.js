@@ -3,7 +3,7 @@
  */
 
 /**
- * Automatically updates the "Teachers Name" dropdown in the Google Form
+ * Automatically updates the teacher dropdown in the Google Form
  * using the list from the "Staff Roster" sheet.
  */
 function updateTeacherDropdown() {
@@ -11,24 +11,20 @@ function updateTeacherDropdown() {
   const rosterSheet = ss.getSheetByName("Staff Roster");
   
   if (!rosterSheet) {
-    Logger.log("Error: Please create a 'Staff Roster' tab.");
+    Logger.log("Error: Could not find the 'Staff Roster' tab.");
     return;
   }
 
   const lastRow = rosterSheet.getLastRow();
-  if (lastRow < 2) {
-    Logger.log("Error: Staff Roster is empty.");
-    return;
-  }
+  if (lastRow < 2) return;
 
-  // 1. Get the names from Column A (starting from row 2 to skip header)
+  // 1. Get and sanitize names
   const rosterData = rosterSheet.getRange(2, 1, lastRow - 1, 1).getValues();
   const teacherNames = rosterData
     .map(row => row[0])
     .filter(name => name && name.toString().trim() !== "")
-    .sort(); // Sort alphabetically for a professional look
+    .sort(); 
 
-  // 2. Connect to the Google Form linked to this sheet
   const formUrl = ss.getFormUrl();
   if (!formUrl) {
     Logger.log("Error: No form linked to this spreadsheet.");
@@ -37,27 +33,50 @@ function updateTeacherDropdown() {
   
   try {
     const form = FormApp.openByUrl(formUrl);
-
-    // 3. Find the "Teachers Name" question
     const items = form.getItems();
-    let teacherQuestion;
+    let teacherQuestion = null;
 
+    // 2. Safer Question Targeting (Case-insensitive, substring match)
     for (let i = 0; i < items.length; i++) {
-      if (items[i].getTitle() === "Teachers Name") {
+      const title = items[i].getTitle().toLowerCase();
+      if (title.includes("teacher") && title.includes("name")) {
         teacherQuestion = items[i];
         break;
       }
     }
 
-    // 4. Update the choices
     if (teacherQuestion) {
-      // Ensure the question is a dropdown (asListItem)
-      teacherQuestion.asListItem().setChoiceValues(teacherNames);
-      Logger.log("Form dropdown updated with " + teacherNames.length + " teachers.");
+      // 3. Safe Type Casting
+      const itemType = teacherQuestion.getType();
+      
+      if (itemType === FormApp.ItemType.LIST) {
+        teacherQuestion.asListItem().setChoiceValues(teacherNames);
+        Logger.log(`Form dropdown updated with ${teacherNames.length} teachers.`);
+      } else if (itemType === FormApp.ItemType.MULTIPLE_CHOICE) {
+        teacherQuestion.asMultipleChoiceItem().setChoiceValues(teacherNames);
+        Logger.log(`Form multiple-choice updated with ${teacherNames.length} teachers.`);
+      } else {
+        Logger.log(`Error: The Teacher Name question is the wrong type (${itemType}). Please change it to a Dropdown.`);
+      }
     } else {
-      Logger.log("Error: Could not find a question titled 'Teachers Name'.");
+      Logger.log("Error: Could not find a question containing 'Teacher Name'.");
     }
   } catch (err) {
     Logger.log("Error updating form: " + err.message);
+  }
+}
+
+/**
+ * AUTOMATION TRIGGER: Runs instantly whenever the spreadsheet is edited.
+ * If the edit happens on the "Staff Roster" tab, it updates the form.
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  
+  const editedSheet = e.range.getSheet();
+  
+  // Only trigger the form update if they are actively modifying the Staff Roster
+  if (editedSheet.getName() === "Staff Roster") {
+    updateTeacherDropdown();
   }
 }

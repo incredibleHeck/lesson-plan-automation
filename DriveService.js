@@ -4,29 +4,39 @@
 
 /**
  * Core Setup: Finds the master folder. If missing, creates it and auto-shares it.
+ * Verifies leadership permissions on every access.
  */
 function getRootFolder() {
   const folders = DriveApp.getFoldersByName(CONFIG.MASTER_FOLDER_NAME);
+  let masterFolder;
 
   if (folders.hasNext()) {
-    return folders.next(); // It already exists, just return it.
+    masterFolder = folders.next();
   } else {
-    // 1. It doesn't exist! Create the Master Folder in the root of your Drive.
-    const newFolder = DriveApp.createFolder(CONFIG.MASTER_FOLDER_NAME);
-
-    // 2. Auto-Share the Folder: Give VP and HODs editor access to the files.
-    newFolder.addEditor(CONFIG.EMAILS.VP_ACADEMICS);
-    newFolder.addEditor(CONFIG.EMAILS.HOD_LOWER_PRIMARY);
-    newFolder.addEditor(CONFIG.EMAILS.HOD_UPPER_SECONDARY);
-
-    // 3. Auto-Share the Spreadsheet: Give them access to the database too.
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    ss.addEditor(CONFIG.EMAILS.VP_ACADEMICS);
-    ss.addEditor(CONFIG.EMAILS.HOD_LOWER_PRIMARY);
-    ss.addEditor(CONFIG.EMAILS.HOD_UPPER_SECONDARY);
-
-    return newFolder;
+    masterFolder = DriveApp.createFolder(CONFIG.MASTER_FOLDER_NAME);
   }
+
+  // Ensure leadership always has access (Self-healing permissions)
+  try {
+    const editors = [
+      CONFIG.HOD_EMAILS.VP,
+      CONFIG.HOD_EMAILS.LOWER,
+      CONFIG.HOD_EMAILS.UPPER
+    ];
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    editors.forEach(email => {
+      if (email) {
+        masterFolder.addEditor(email);
+        ss.addEditor(email);
+      }
+    });
+  } catch (err) {
+    Logger.log("Permission sync failed: " + err.message);
+  }
+
+  return masterFolder;
 }
 
 /**
@@ -42,27 +52,11 @@ function getOrCreateFolder(parentFolder, folderName) {
 }
 
 /**
- * True when Drive likely denied access (vs conversion/format issues).
- */
-function isDrivePermissionError(err) {
-  const msg = err && err.message ? String(err.message).toLowerCase() : "";
-  return (
-    msg.indexOf("permission") !== -1 ||
-    msg.indexOf("access denied") !== -1 ||
-    msg.indexOf("not authorized") !== -1 ||
-    msg.indexOf("insufficient permissions") !== -1 ||
-    msg.indexOf("forbidden") !== -1
-  );
-}
-
-/**
  * Moves file to chronological folder structure and standardizes the name.
- * CONVERTS TO PDF if needed.
+ * Handles "Move vs Copy" permission barriers and CONVERTS TO PDF if needed.
  */
 function processDriveFile(fileUrl, weekName, className, subjectName, teacherName) {
-  if (!fileUrl) {
-    return null;
-  }
+  if (!fileUrl) return null;
 
   const masterFolder = getRootFolder();
   const weekFolder = getOrCreateFolder(masterFolder, weekName);
@@ -70,52 +64,38 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
 
   const fileIdMatch = fileUrl.match(/[-\w]{25,}/);
   const fileId = fileIdMatch ? fileIdMatch[0] : null;
+  if (!fileId) return null;
 
-  if (!fileId) {
-    return null;
-  }
-
-  let originalFile;
   try {
-    originalFile = DriveApp.getFileById(fileId);
+    const originalFile = DriveApp.getFileById(fileId);
     const newBaseName = `${subjectName} - ${teacherName}`;
+    const isPdf = originalFile.getMimeType() === MimeType.PDF;
+    
+    let finalFile;
 
-    if (originalFile.getMimeType() === MimeType.PDF) {
+    if (isPdf) {
+      // If it's already a PDF, try to move it
       originalFile.setName(`${newBaseName}.pdf`);
-      originalFile.moveTo(classFolder);
-      return fileId;
+      try {
+        originalFile.moveTo(classFolder);
+        finalFile = originalFile;
+      } catch (e) {
+        // Fallback: If move fails (permissions/org barrier), copy it
+        finalFile = originalFile.makeCopy(`${newBaseName}.pdf`, classFolder);
+      }
+    } else {
+      // Convert to PDF
+      const pdfBlob = originalFile.getAs(MimeType.PDF);
+      pdfBlob.setName(`${newBaseName}.pdf`);
+      finalFile = classFolder.createFile(pdfBlob);
+      
+      // SAFETY: We no longer trash the original file automatically to prevent data loss.
     }
 
-    const pdfBlob = originalFile.getAs(MimeType.PDF);
-    pdfBlob.setName(`${newBaseName}.pdf`);
+    return finalFile.getId();
 
-    const newPdfFile = classFolder.createFile(pdfBlob);
-    originalFile.setTrashed(true);
-
-    return newPdfFile.getId();
   } catch (e) {
-    if (isDrivePermissionError(e)) {
-      Logger.log("DRIVE PERMISSION ERROR: The script cannot access the file. " + e.message);
-      return null;
-    }
-
-    if (!originalFile) {
-      Logger.log("Drive processing error: " + e.message);
-      return null;
-    }
-
-    try {
-      const newBaseName = `${subjectName} - ${teacherName}`;
-      const originalName = originalFile.getName();
-      const extension = originalName.indexOf(".") !== -1 ? originalName.split(".").pop() : "";
-      const finalName = newBaseName + (extension ? "." + extension : "");
-
-      originalFile.setName(finalName);
-      originalFile.moveTo(classFolder);
-      return fileId;
-    } catch (e2) {
-      Logger.log("Drive fallback failed (rename/move): " + e2.message);
-      return null;
-    }
+    Logger.log(`Drive Error for ${teacherName}: ${e.message}`);
+    return null;
   }
 }

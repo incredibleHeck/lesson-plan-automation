@@ -3,19 +3,28 @@
  */
 
 /**
+ * Compresses long subject names into short codes for Telegram's 64-byte limit.
+ */
+function compressSubject(subjectName) {
+  const subj = subjectName.toLowerCase();
+  if (subj.includes("ict") || subj.includes("computing")) return "ICT";
+  if (subj.includes("math")) return "MAT";
+  if (subj.includes("english") || subj.includes("literacy")) return "ENG";
+  if (subj.includes("science")) return "SCI";
+  if (subj.includes("french")) return "FRE";
+  if (subj.includes("history")) return "HIS";
+  if (subj.includes("geography")) return "GEO";
+  return subjectName.substring(0, 4).toUpperCase();
+}
+
+/**
  * Core function to communicate with the Telegram API.
- * @param {string} chatId The Telegram Chat ID to send the message to.
- * @param {string} message The message text.
- * @param {Object} keyboard Optional inline keyboard markup.
  */
 function sendTelegramMessage(chatId, message, keyboard = null) {
-  // Failsafe: Don't run if the bot isn't set up yet
   if (!CONFIG.TELEGRAM.BOT_TOKEN || CONFIG.TELEGRAM.BOT_TOKEN === "PASTE_YOUR_BOT_TOKEN_HERE") {
     return;
   }
   
-  // Telegram has a hard limit of 4096 characters per message.
-  // We truncate at 4000 just to be safe with HTML tags.
   let safeMessage = message;
   if (safeMessage.length > 4000) {
     safeMessage = safeMessage.substring(0, 4000) + "\n\n<i>...[Message truncated due to length. View full audit in Google Sheets]</i>";
@@ -48,8 +57,8 @@ function sendTelegramMessage(chatId, message, keyboard = null) {
 }
 
 /**
- * Formats the AI Audit and routes it to the VP and the correct HOD.
- * Includes interactive approval buttons for everyone.
+ * Formats the AI Audit and routes it to leadership with approval buttons.
+ * Data: Action_Week_Subject_Teacher
  */
 function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus, weekString) {
   const formattedTime = Utilities.formatDate(timestamp, "Africa/Accra", "MMM d, yyyy 'at' h:mm a");
@@ -66,24 +75,22 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
                   `<b>Status:</b> ${latenessStatus}\n\n` +
                   `<b>🤖 AI Audit:</b>\n${cleanAudit}`;
   
-  // Compress "Week 3" to "W3" for Telegram's 64-byte limit
   const shortWeek = weekString.replace("Week ", "W").trim();
+  const shortSubj = compressSubject(subjectName);
 
   const approvalKeyboard = {
     "inline_keyboard": [
       [
-        { "text": "✅ Approve", "callback_data": `APP_${shortWeek}_${teacherName}` },
-        { "text": "🚨 Request Revision", "callback_data": `REV_${shortWeek}_${teacherName}` }
+        { "text": "✅ Approve", "callback_data": `APP_${shortWeek}_${shortSubj}_${teacherName}` },
+        { "text": "🚨 Request Revision", "callback_data": `REV_${shortWeek}_${shortSubj}_${teacherName}` }
       ]
     ]
   };
 
-  // 1. Send to VP with buttons for oversight/action
   if (CONFIG.TELEGRAM.CHAT_ID_VP) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message, approvalKeyboard);
   }
   
-  // 2. Route to the respective HOD with buttons
   if (hodName.includes("Alfred Ashia") && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message, approvalKeyboard);
   } else if (hodName.includes("Abigail Sackey") && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
@@ -92,30 +99,42 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
 }
 
 /**
- * Handles incoming Slash Commands from the VP or HODs.
+ * Handles incoming Slash Commands.
  */
 function handleSlashCommand(message) {
   const text = message.text;
   const chatId = message.chat.id;
 
   if (text.startsWith("/defaulters")) {
-    sendTelegramMessage(chatId, "⏳ Scanning the Master Sheet for defaulters...");
+    const parts = text.split(" ");
+    let targetWeek = "";
     
-    // 1. Get current submission data to see who HAS submitted
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const rawSheet = ss.getSheetByName("Form responses 1");
-    const submissionData = rawSheet.getDataRange().getValues();
-    const latestRow = submissionData[submissionData.length - 1];
-    const targetWeek = latestRow[CONFIG.INDICES.WEEK_STARTING];
-    
-    let submittedTeachers = new Set();
-    for (let i = 1; i < submissionData.length; i++) {
-      if (submissionData[i][CONFIG.INDICES.WEEK_STARTING] === targetWeek) {
-        submittedTeachers.add(submissionData[i][CONFIG.INDICES.TEACHER_NAME]);
-      }
+    // Support "/defaulters" (automatic) or "/defaulters Week X"
+    if (parts.length > 1) {
+      targetWeek = parts.slice(1).join(" ");
+    } else {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const rawSheet = ss.getSheetByName("Form responses 1");
+      const lastRowData = rawSheet.getRange(rawSheet.getLastRow(), CONFIG.INDICES.WEEK_STARTING + 1).getValue();
+      targetWeek = extractWeekName(lastRowData);
     }
 
-    // 2. Get dynamic roster to see who SHOULD submit
+    sendTelegramMessage(chatId, `⏳ Scanning ${targetWeek} for defaulters...`);
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const weeklySheet = ss.getSheetByName(targetWeek);
+    
+    if (!weeklySheet) {
+      sendTelegramMessage(chatId, `⚠️ <b>Error:</b> Could not find a tab named '${targetWeek}'.`);
+      return;
+    }
+
+    const submissionData = weeklySheet.getDataRange().getValues();
+    let submittedTeachers = new Set();
+    for (let i = 1; i < submissionData.length; i++) {
+      submittedTeachers.add(submissionData[i][CONFIG.INDICES.TEACHER_NAME]);
+    }
+
     const liveRoster = getDynamicTeacherRoster();
     let missingRows = [];
     
@@ -128,11 +147,10 @@ function handleSlashCommand(message) {
     });
 
     if (missingRows.length > 0) {
-      const report = `<b>📊 Defaulters Report (${extractWeekName(targetWeek)}):</b>\nThe following teachers have not submitted plans yet. Tap to send a nudge:`;
-      const nudgeKeyboard = { "inline_keyboard": missingRows };
-      sendTelegramMessage(chatId, report, nudgeKeyboard);
+      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\nThe following teachers are missing plans. Tap to send a nudge:`;
+      sendTelegramMessage(chatId, report, { "inline_keyboard": missingRows });
     } else {
-      sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All teachers in the roster have submitted plans for ${extractWeekName(targetWeek)}!`);
+      sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All rostered teachers have submitted plans for ${targetWeek}!`);
     }
     
   } else if (text.startsWith("/status")) {
@@ -147,7 +165,6 @@ function handleCallbackQuery(callbackQuery) {
   const data = callbackQuery.data;
   const chatId = callbackQuery.message.chat.id;
   
-  // 1. Stop the "loading" spinner in Telegram
   const answerUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/answerCallbackQuery`;
   UrlFetchApp.fetch(answerUrl, {
     method: "post",
@@ -160,20 +177,23 @@ function handleCallbackQuery(callbackQuery) {
 
   if (action === "APP" || action === "REV") {
     const shortWeek = parts[1];
-    const teacher = parts[2];
+    const shortSubj = parts[2];
+    const teacher = parts.slice(3).join("_"); // Safe join for names with underscores
     const targetSheetName = shortWeek.replace("W", "Week ");
+    const fullStatus = action === "APP" ? "✅ APPROVED" : "🚨 REVISION NEEDED";
     
-    if (action === "APP") {
-      updateApprovalStatus(teacher, targetSheetName, "✅ APPROVED");
-      responseText = `✅ <b>Approved:</b> You have approved the plan for ${teacher} on the '${targetSheetName}' tab.`;
-    } else if (action === "REV") {
-      const rowData = updateApprovalStatus(teacher, targetSheetName, "🚨 REVISION NEEDED");
-      if (rowData && rowData.email) {
+    // We pass shortSubj to SheetService (needs partial match logic)
+    const rowData = updateApprovalStatus(teacher, shortSubj, targetSheetName, fullStatus);
+    
+    if (rowData) {
+      if (action === "REV" && rowData.email) {
         sendRevisionEmail(rowData.email, teacher, targetSheetName, rowData.audit);
-        responseText = `🚨 <b>Revision Requested:</b> The '${targetSheetName}' tab is updated, and an email was sent to ${teacher}.`;
+        responseText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified for ${targetSheetName}.`;
       } else {
-        responseText = `⚠️ <b>Warning:</b> Status updated for ${teacher}, but no email found in the Staff Roster.`;
+        responseText = `✅ <b>Status Updated:</b> ${teacher}'s ${shortSubj} plan is now ${fullStatus} on the ${targetSheetName} tab.`;
       }
+    } else {
+      responseText = `⚠️ <b>Error:</b> Could not find a matching row for ${teacher}'s ${shortSubj} plan on the ${targetSheetName} tab.`;
     }
   } else if (action === "NUDGE") {
     const teacher = parts[1];
@@ -188,6 +208,5 @@ function handleCallbackQuery(callbackQuery) {
     }
   }
 
-  // 3. Update message to show result
   sendTelegramMessage(chatId, responseText);
 }
