@@ -7,16 +7,16 @@ const scriptProps = PropertiesService.getScriptProperties();
 const CONFIG = {
   MASTER_FOLDER_NAME: "2026 Lesson Plans Master",
   
-  // These are used for automated email routing and identification
+  // SECURED: Pulled from Script Properties to protect PII
   HOD_EMAILS: {
-    LOWER: "alfredashia@stadelaideschools.com",
-    UPPER: "abigailsackey@stadelaideschools.com",
-    VP: "theodorahammond@stadelaideschools.com"
+    LOWER: scriptProps.getProperty("EMAIL_LOWER_HOD") || "alfredashia@stadelaideschools.com",
+    UPPER: scriptProps.getProperty("EMAIL_UPPER_HOD") || "abigailsackey@stadelaideschools.com",
+    VP: scriptProps.getProperty("EMAIL_VP") || "theodorahammond@stadelaideschools.com"
   },
   
   HOD_NAMES: {
-    LOWER: "Alfred Ashia",
-    UPPER: "Abigail Sackey"
+    LOWER: scriptProps.getProperty("NAME_LOWER_HOD") || "Alfred Ashia",
+    UPPER: scriptProps.getProperty("NAME_UPPER_HOD") || "Abigail Sackey"
   },
 
   // 1. INDICES FOR INCOMING FORM SUBMISSION (e.values array)

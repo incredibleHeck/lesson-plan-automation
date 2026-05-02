@@ -100,10 +100,23 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
 
 /**
  * Handles incoming Slash Commands.
+ * SECURED: Includes an Allowlist check to ensure only leadership can run commands.
  */
 function handleSlashCommand(message) {
   const text = message.text;
-  const chatId = message.chat.id;
+  const chatId = String(message.chat.id);
+
+  // SECURITY: The Allowlist Check
+  const allowedIds = [
+    String(CONFIG.TELEGRAM.CHAT_ID_VP),
+    String(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD),
+    String(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD)
+  ];
+
+  if (!allowedIds.includes(chatId)) {
+    Logger.log(`Unauthorized access attempt from Chat ID: ${chatId}`);
+    return; // Silently drop unauthorized requests
+  }
 
   if (text.startsWith("/defaulters")) {
     const parts = text.split(" ");

@@ -81,7 +81,8 @@ function generateAiSummary(fileId, className, subjectName, previousFileId) {
  * Core function to call Gemini 3.1 Pro Preview with strict formatting and context.
  */
 function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, subjectName) {
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+  // SECURED: API key moved to Header
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`;
   
   const systemInstruction = 
     "You are a Cambridge-certified academic auditor for St. Adelaide International Schools. " +
@@ -123,7 +124,7 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
       }
     ],
     "generationConfig": {
-      "temperature": 0.2, // Keeps the AI highly analytical and strict
+      "temperature": 0.2, 
       "topK": 32,
       "topP": 0.95
     }
@@ -132,6 +133,9 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
   const options = {
     "method": "post",
     "contentType": "application/json",
+    "headers": {
+      "x-goog-api-key": CONFIG.GEMINI_API_KEY
+    },
     "payload": JSON.stringify(payload),
     "muteHttpExceptions": true 
   };
@@ -141,13 +145,20 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     const responseCode = response.getResponseCode();
     const responseText = response.getContentText();
 
-    if (responseCode !== 200) {
-      Logger.log("Gemini API Error: " + responseText);
-      const errorData = JSON.parse(responseText);
-      return "GEMINI REJECTED: " + (errorData.error ? errorData.error.message : "Unknown API Error"); 
+    // SECURED: Safe JSON parsing
+    let json;
+    try {
+      json = JSON.parse(responseText);
+    } catch (parseErr) {
+      Logger.log("Gemini API Error (Invalid JSON): " + responseText);
+      return "GEMINI REJECTED: Invalid JSON response from server.";
     }
 
-    const json = JSON.parse(responseText);
+    if (responseCode !== 200) {
+      Logger.log("Gemini API Error: " + responseText);
+      return "GEMINI REJECTED: " + (json.error ? json.error.message : "Unknown API Error"); 
+    }
+
     if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
       return json.candidates[0].content.parts[0].text;
     } else {
@@ -185,16 +196,13 @@ function extractTextFromPdf(fileId) {
     let attempts = 0;
     const maxAttempts = 3;
     
-    // Smart Retry Loop: Try up to 3 times, waiting 4 seconds each time (Max 12s)
-    // Handles server lag without fixed long delays for fast jobs.
     while (attempts < maxAttempts) {
       Utilities.sleep(4000); 
       try {
         const tempDoc = DocumentApp.openById(tempDocFile.id);
         text = tempDoc.getBody().getText();
-        if (text && text.trim().length > 0) break; // Success!
+        if (text && text.trim().length > 0) break; 
       } catch (e) {
-        // Document might not be fully ready yet, let the loop try again
       }
       attempts++;
     }
@@ -205,7 +213,6 @@ function extractTextFromPdf(fileId) {
     Logger.log("OCR Error: " + err.message);
     return null;
   } finally {
-    // ALWAYS clean up the temporary file immediately to keep Drive organized
     if (tempDocFile && tempDocFile.id) {
       try {
         DriveApp.getFileById(tempDocFile.id).setTrashed(true);
