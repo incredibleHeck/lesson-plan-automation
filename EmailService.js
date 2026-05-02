@@ -43,9 +43,9 @@ function sendFridayLateReport() {
   const data = rawSheet.getDataRange().getValues();
   
   // 2. Get the Staff Roster Data
-  const rosterSheet = ss.getSheetByName("Staff Roster");
+  const rosterSheet = ss.getSheetByName("Teachers Roster");
   if (!rosterSheet) {
-    Logger.log("Error: Please create a 'Staff Roster' tab.");
+    Logger.log("Error: Please create a 'Teachers Roster' tab.");
     return;
   }
   const rosterData = rosterSheet.getDataRange().getValues();
@@ -88,15 +88,15 @@ function sendFridayLateReport() {
   // 2. Ghost Tracker: Scan roster for MISSING
   for (let i = 1; i < rosterData.length; i++) {
     const rosterTeacher = rosterData[i][0]; // Col A: Teacher Name
-    const rosterDept = rosterData[i][1];    // Col B: Department
+    const hodEmail = rosterData[i][2];      // Col C: HOD Email
 
     if (rosterTeacher && !submittedTeachers.includes(rosterTeacher)) {
       const entry = `❌ MISSING: ${rosterTeacher} (No submission for ${extractWeekName(targetWeek)})`;
       
-      // Route missing teachers based on department in roster
-      if (rosterDept === "Lower Primary") {
+      // Route missing teachers based on HOD email
+      if (hodEmail === CONFIG.EMAILS.HOD_LOWER_PRIMARY) {
         primaryReport.push(entry);
-      } else if (rosterDept === "Upper/Secondary") {
+      } else if (hodEmail === CONFIG.EMAILS.HOD_UPPER_SECONDARY) {
         secondaryReport.push(entry);
       }
     }
@@ -108,7 +108,7 @@ function sendFridayLateReport() {
       to: CONFIG.EMAILS.HOD_LOWER_PRIMARY,
       cc: CONFIG.EMAILS.VP_ACADEMICS,
       subject: `Friday Report: Late & Missing Plans (Lower Primary)`,
-      body: `Hello Mr. Ashia,\n\nHere is the status report for ${targetWeek}:\n\n${primaryReport.join("\n")}\n\nPlease check the spreadsheet for details.`
+      body: `Hello Mr. Ashia,\n\nHere is the status report for ${targetWeek}:\n\n` + primaryReport.join("\n") + `\n\nPlease check the spreadsheet for details.`
     });
   }
 
@@ -117,7 +117,43 @@ function sendFridayLateReport() {
       to: CONFIG.EMAILS.HOD_UPPER_SECONDARY,
       cc: CONFIG.EMAILS.VP_ACADEMICS,
       subject: `Friday Report: Late & Missing Plans (Upper/Secondary)`,
-      body: `Hello Mrs. Sackey,\n\nHere is the status report for ${targetWeek}:\n\n${secondaryReport.join("\n")}\n\nPlease check the spreadsheet for details.`
+      body: `Hello Mrs. Sackey,\n\nHere is the status report for ${targetWeek}:\n\n` + secondaryReport.join("\n") + `\n\nPlease check the spreadsheet for details.`
     });
   }
+}
+
+/**
+ * Sends a nudge email to a teacher regarding a missing lesson plan.
+ */
+function sendNudgeEmail(teacherEmail, teacherName, weekName, hodEmail) {
+  const subject = `URGENT: Lesson Plan Submission for ${weekName}`;
+  const body = `Dear ${teacherName},\n\nThis is a courtesy reminder from the St. Adelaide Ops Bot. Our records indicate that your lesson plan for ${weekName} has not been received yet.\n\nPlease submit it at your earliest convenience to avoid further delays.\n\nThank you.`;
+  
+  MailApp.sendEmail({
+    to: teacherEmail,
+    cc: hodEmail, // Copy the HOD on the nudge
+    subject: subject,
+    body: body
+  });
+}
+
+/**
+ * Sends a revision request email to the teacher.
+ */
+function sendRevisionEmail(teacherEmail, teacherName, weekName, auditResult) {
+  if (!teacherEmail) return;
+
+  const subject = `ACTION REQUIRED: Lesson Plan Revision (${weekName})`;
+  const body = `Dear ${teacherName},\n\n` +
+               `Your HOD has reviewed your lesson plan for ${weekName} and requested a revision.\n\n` +
+               `AI AUDIT SUMMARY:\n${auditResult}\n\n` +
+               `Please update your lesson plan on Google Drive and inform your HOD once the changes are made.\n\n` +
+               `Thank you,\nSt. Adelaide Academic Office`;
+  
+  MailApp.sendEmail({
+    to: teacherEmail,
+    cc: CONFIG.EMAILS.VP_ACADEMICS, // Oversight for the VP
+    subject: subject,
+    body: body
+  });
 }

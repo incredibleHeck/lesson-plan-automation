@@ -66,11 +66,14 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
                   `<b>Status:</b> ${latenessStatus}\n\n` +
                   `<b>🤖 AI Audit:</b>\n${cleanAudit}`;
   
+  // Compress "Week 3" to "W3" for Telegram's 64-byte limit
+  const shortWeek = weekString.replace("Week ", "W").trim();
+
   const approvalKeyboard = {
     "inline_keyboard": [
       [
-        { "text": "✅ Approve", "callback_data": `APPROVE_${teacherName}` },
-        { "text": "🚨 Request Revision", "callback_data": `REVISE_${teacherName}` }
+        { "text": "✅ Approve", "callback_data": `APP_${shortWeek}_${teacherName}` },
+        { "text": "🚨 Request Revision", "callback_data": `REV_${shortWeek}_${teacherName}` }
       ]
     ]
   };
@@ -98,9 +101,39 @@ function handleSlashCommand(message) {
   if (text.startsWith("/defaulters")) {
     sendTelegramMessage(chatId, "⏳ Scanning the Master Sheet for defaulters...");
     
-    // Logic to scan Staff Roster vs Current Week's submissions
-    const report = "<b>📊 Defaulters Report:</b>\n<i>Scanning complete. 3 teachers are currently missing plans for the upcoming week.</i>";
-    sendTelegramMessage(chatId, report);
+    // 1. Get current submission data to see who HAS submitted
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const rawSheet = ss.getSheetByName("Form responses 1");
+    const submissionData = rawSheet.getDataRange().getValues();
+    const latestRow = submissionData[submissionData.length - 1];
+    const targetWeek = latestRow[CONFIG.INDICES.WEEK_STARTING];
+    
+    let submittedTeachers = new Set();
+    for (let i = 1; i < submissionData.length; i++) {
+      if (submissionData[i][CONFIG.INDICES.WEEK_STARTING] === targetWeek) {
+        submittedTeachers.add(submissionData[i][CONFIG.INDICES.TEACHER_NAME]);
+      }
+    }
+
+    // 2. Get dynamic roster to see who SHOULD submit
+    const liveRoster = getDynamicTeacherRoster();
+    let missingRows = [];
+    
+    Object.keys(liveRoster).forEach(teacher => {
+      if (!submittedTeachers.has(teacher)) {
+        missingRows.push([
+          { "text": `📲 Nudge ${teacher}`, "callback_data": `NUDGE_${teacher}` }
+        ]);
+      }
+    });
+
+    if (missingRows.length > 0) {
+      const report = `<b>📊 Defaulters Report (${extractWeekName(targetWeek)}):</b>\nThe following teachers have not submitted plans yet. Tap to send a nudge:`;
+      const nudgeKeyboard = { "inline_keyboard": missingRows };
+      sendTelegramMessage(chatId, report, nudgeKeyboard);
+    } else {
+      sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All teachers in the roster have submitted plans for ${extractWeekName(targetWeek)}!`);
+    }
     
   } else if (text.startsWith("/status")) {
     sendTelegramMessage(chatId, "🟢 <b>St. Adelaide Ops Bot:</b> Fully operational and monitoring lesson plans.");
@@ -121,14 +154,38 @@ function handleCallbackQuery(callbackQuery) {
     payload: { callback_query_id: callbackQuery.id }
   });
 
-  // 2. Process Decision
   let resultText = "";
-  if (data.startsWith("APPROVE_")) {
-    const teacher = data.replace("APPROVE_", "");
-    resultText = `✅ <b>Approved:</b> You have approved the plan for ${teacher}.`;
-  } else if (data.startsWith("REVISE_")) {
-    const teacher = data.replace("REVISE_", "");
-    resultText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified.`;
+  const parts = data.split("_");
+  const action = parts[0];
+
+  if (action === "APP" || action === "REV") {
+    const shortWeek = parts[1];
+    const teacher = parts[2];
+    const targetSheetName = shortWeek.replace("W", "Week ");
+    
+    if (action === "APP") {
+      updateApprovalStatus(teacher, targetSheetName, "✅ APPROVED");
+      resultText = `✅ <b>Approved:</b> You have approved the plan for ${teacher} (Week ${shortWeek.replace("W", "")}).`;
+    } else if (action === "REV") {
+      const rowData = updateApprovalStatus(teacher, targetSheetName, "🚨 REVISION NEEDED");
+      if (rowData && rowData.email) {
+        sendRevisionEmail(rowData.email, teacher, targetSheetName, rowData.audit);
+        resultText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified for ${targetSheetName}.`;
+      } else {
+        resultText = `⚠️ <b>Partial Success:</b> Row updated, but teacher email not found in roster.`;
+      }
+    }
+  } else if (action === "NUDGE") {
+    const teacher = parts[1];
+    const liveRoster = getDynamicTeacherRoster();
+    const teacherInfo = liveRoster[teacher];
+    
+    if (teacherInfo && teacherInfo.email) {
+      sendNudgeEmail(teacherInfo.email, teacher, "the current week", teacherInfo.hodEmail);
+      resultText = `✉️ <b>Nudge Sent:</b> An urgent reminder was emailed to ${teacher}, copying their HOD.`;
+    } else {
+      resultText = `⚠️ <b>Error:</b> Could not find an email address for ${teacher} in the Teachers Roster.`;
+    }
   }
 
   // 3. Update message to show result

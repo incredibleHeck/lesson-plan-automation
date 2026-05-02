@@ -26,6 +26,17 @@ const CONFIG = {
     HOD_CHECK: 10,
     DAYS_LATE: 11
   },
+  // Columns for the dynamically created weekly sheets (1-indexed)
+  WEEKLY_COLUMNS: {
+    HOD_CHECK: 8,
+    AI_AUDIT: 10
+  },
+  // Indices for the row data in weekly sheets (0-indexed)
+  WEEKLY_INDICES: {
+    TEACHER_NAME: 3,
+    TEACHER_EMAIL: 7, // Note: Not currently in weekly sheet row, retrieved from roster or responses
+    AI_AUDIT: 9
+  },
   HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late", "AI Audit"],
 
   DEADLINE: {
