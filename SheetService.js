@@ -32,8 +32,8 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
   weeklySheet.appendRow(rowData);
   const lastRow = weeklySheet.getLastRow();
   
-  // PRO UPGRADE: Add an interactive dropdown to the "HOD Check" column
-  const hodCheckCell = weeklySheet.getRange(lastRow, CONFIG.WEEKLY_COLUMNS.HOD_CHECK); 
+  // PRO UPGRADE: Add an interactive dropdown to the "HOD Check" column (Column H / 8)
+  const hodCheckCell = weeklySheet.getRange(lastRow, CONFIG.STATUS_COLUMN_NUMBER); 
   const validationRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(["UNREAD", "✅ APPROVED", "🚨 REVISION NEEDED"], true)
     .build();
@@ -46,7 +46,44 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
 }
 
 /**
- * Updates the approval status on the specific Week's sheet and returns the teacher's data
+ * Looks at the previous week's tab to find the teacher's previous lesson plan.
+ * Returns the Google Drive File ID if found.
+ */
+function getPreviousLessonFileId(teacherName, className, subjectName, currentWeekString) {
+  // Extract the week number (e.g., gets "3" from "Week 3: May 4...")
+  const match = currentWeekString.match(/Week (\d+)/i);
+  if (!match) return null;
+  
+  const currentWeekNum = parseInt(match[1], 10);
+  if (currentWeekNum <= 1) return null; // Week 1 has no previous week!
+  
+  const prevWeekName = "Week " + (currentWeekNum - 1);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const prevSheet = ss.getSheetByName(prevWeekName);
+  
+  if (!prevSheet) return null; // If the tab doesn't exist yet, abort gracefully
+  
+  const data = prevSheet.getDataRange().getValues();
+  
+  // Loop backwards to find their latest submission for this EXACT class and subject
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][CONFIG.INDICES.TEACHER_NAME] === teacherName &&
+        data[i][CONFIG.INDICES.CLASS] === className &&
+        data[i][CONFIG.INDICES.SUBJECT] === subjectName) {
+        
+        const fileUrl = data[i][CONFIG.INDICES.UPLOAD_LINK]; 
+        if (!fileUrl) return null;
+        
+        // Extract the raw Drive File ID from the URL string
+        const idMatch = fileUrl.match(/id=([a-zA-Z0-9_-]+)/);
+        return idMatch ? idMatch[1] : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Updates the approval status on the specific Week's sheet and gets the Audit text
  */
 function updateApprovalStatus(teacherName, sheetName, status) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -61,19 +98,19 @@ function updateApprovalStatus(teacherName, sheetName, status) {
   
   // Loop backwards to find the teacher's MOST RECENT submission on this specific week tab
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][CONFIG.WEEKLY_INDICES.TEACHER_NAME] === teacherName) {
+    if (data[i][CONFIG.INDICES.TEACHER_NAME] === teacherName) {
       
       // Update the status column (i + 1 because Sheets are 1-indexed)
-      targetSheet.getRange(i + 1, CONFIG.WEEKLY_COLUMNS.HOD_CHECK).setValue(status);
+      targetSheet.getRange(i + 1, CONFIG.STATUS_COLUMN_NUMBER).setValue(status);
       
-      // Fetch email from the dynamic roster for the notification
+      // Look up their email from the live roster!
       const roster = getDynamicTeacherRoster();
-      const teacherInfo = roster[teacherName];
-
+      const teacherEmail = roster[teacherName] ? roster[teacherName].email : null;
+      
       return {
-        email: teacherInfo ? teacherInfo.email : null,
+        email: teacherEmail,
         week: sheetName,
-        audit: data[i][CONFIG.WEEKLY_INDICES.AI_AUDIT] || "Please review the feedback from your HOD."
+        audit: data[i][CONFIG.INDICES.AI_AUDIT] || "Please review the feedback from your HOD."
       };
     }
   }
@@ -81,29 +118,37 @@ function updateApprovalStatus(teacherName, sheetName, status) {
 }
 
 /**
- * Dynamically pulls the master teacher list from the "Teachers Roster" sheet
+ * Dynamically pulls the master teacher list from the "Staff Roster" sheet
  * Returns an object: { "Teacher Name": { email: "...", hodEmail: "..." } }
  */
 function getDynamicTeacherRoster() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const rosterSheet = ss.getSheetByName("Teachers Roster"); 
+  const rosterSheet = ss.getSheetByName("Staff Roster"); 
   
   if (!rosterSheet) {
-    Logger.log("Error: Could not find the 'Teachers Roster' sheet.");
+    Logger.log("Error: Could not find the 'Staff Roster' sheet.");
     return {};
   }
 
   const data = rosterSheet.getDataRange().getValues();
   const roster = {};
 
+  // Start loop at 1 to skip the header row
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const teacherName = row[0]; // Name in Column A
+    const department = row[1];  // Department in Column B
+    const email = row[2];       // Email in Column C
     
     if (teacherName) {
+      // Figure out which HOD email to CC based on their department
+      const hodEmail = (department.includes("Upper") || department.includes("Secondary"))
+                       ? CONFIG.HOD_EMAILS.UPPER 
+                       : CONFIG.HOD_EMAILS.LOWER;
+
       roster[teacherName] = {
-        email: row[1],    // Teacher Email in Column B
-        hodEmail: row[2]  // HOD Email in Column C
+        email: email,
+        hodEmail: hodEmail
       };
     }
   }

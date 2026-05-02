@@ -154,7 +154,7 @@ function handleCallbackQuery(callbackQuery) {
     payload: { callback_query_id: callbackQuery.id }
   });
 
-  let resultText = "";
+  let responseText = "";
   const parts = data.split("_");
   const action = parts[0];
 
@@ -165,14 +165,14 @@ function handleCallbackQuery(callbackQuery) {
     
     if (action === "APP") {
       updateApprovalStatus(teacher, targetSheetName, "✅ APPROVED");
-      resultText = `✅ <b>Approved:</b> You have approved the plan for ${teacher} (Week ${shortWeek.replace("W", "")}).`;
+      responseText = `✅ <b>Approved:</b> You have approved the plan for ${teacher} on the '${targetSheetName}' tab.`;
     } else if (action === "REV") {
       const rowData = updateApprovalStatus(teacher, targetSheetName, "🚨 REVISION NEEDED");
       if (rowData && rowData.email) {
         sendRevisionEmail(rowData.email, teacher, targetSheetName, rowData.audit);
-        resultText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified for ${targetSheetName}.`;
+        responseText = `🚨 <b>Revision Requested:</b> The '${targetSheetName}' tab is updated, and an email was sent to ${teacher}.`;
       } else {
-        resultText = `⚠️ <b>Partial Success:</b> Row updated, but teacher email not found in roster.`;
+        responseText = `⚠️ <b>Warning:</b> Status updated for ${teacher}, but no email found in the Staff Roster.`;
       }
     }
   } else if (action === "NUDGE") {
@@ -182,12 +182,12 @@ function handleCallbackQuery(callbackQuery) {
     
     if (teacherInfo && teacherInfo.email) {
       sendNudgeEmail(teacherInfo.email, teacher, "the current week", teacherInfo.hodEmail);
-      resultText = `✉️ <b>Nudge Sent:</b> An urgent reminder was emailed to ${teacher}, copying their HOD.`;
+      responseText = `✉️ <b>Nudge Sent:</b> An urgent reminder was emailed to ${teacher}, copying their HOD.`;
     } else {
-      resultText = `⚠️ <b>Error:</b> Could not find an email address for ${teacher} in the Teachers Roster.`;
+      responseText = `⚠️ <b>Error:</b> Could not find an email address for ${teacher} in the Staff Roster.`;
     }
   }
 
   // 3. Update message to show result
-  sendTelegramMessage(chatId, resultText);
+  sendTelegramMessage(chatId, responseText);
 }

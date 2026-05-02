@@ -53,11 +53,16 @@ function onFormSubmit(e) {
     Logger.log("Error processing drive file: " + err.message);
   }
 
-  // 4. Log to Sheet (Routing & Highlighting) with AI Audit 
-  const aiAuditText = generateAiSummary(fileId, className, subjectName);
+  // 4. TIME-TRAVEL: GET PREVIOUS WEEK'S FILE
+  const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, fullWeekString);
+
+  // 5. GENERATE AUDIT (NOW WITH CONTINUITY!)
+  const aiAuditText = generateAiSummary(fileId, className, subjectName, previousFileId);
+
+  // 6. Log to Sheet (Routing & Highlighting)
   logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
 
-  // 5. Blast the audit report to Telegram!
+  // 7. Blast the audit report to Telegram!
   try {
     const weekMatch = fullWeekString.match(/Week \d+/i);
     const cleanWeek = weekMatch ? weekMatch[0] : fullWeekString;
@@ -66,7 +71,7 @@ function onFormSubmit(e) {
     Logger.log("Error sending Telegram alert: " + err.message);
   }
 
-  // 6. Send Confirmation Receipt to Teacher
+  // 8. Send Confirmation Receipt to Teacher
   sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString);
 }
 
