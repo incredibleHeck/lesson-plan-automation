@@ -63,7 +63,9 @@ function calculateDaysLate(submissionDate, deadlineDate) {
  * Form timestamps as strings are interpreted in Ghanaian day/month order, not US MDY.
  */
 function parseGhanaianDate(dateString) {
-  if (!dateString) return new Date();
+  // SECURED: Return null if missing to avoid masking errors with 'new Date()'
+  if (!dateString) return null;
+  
   if (dateString instanceof Date) return dateString;
   if (typeof dateString !== "string") return new Date(dateString);
 

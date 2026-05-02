@@ -18,6 +18,17 @@ function compressSubject(subjectName) {
 }
 
 /**
+ * Safely escapes HTML special characters for Telegram's brittle parser.
+ */
+function escapeHTML(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/**
  * Core function to communicate with the Telegram API.
  */
 function sendTelegramMessage(chatId, message, keyboard = null) {
@@ -63,7 +74,10 @@ function sendTelegramMessage(chatId, message, keyboard = null) {
 function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus, weekString) {
   const formattedTime = Utilities.formatDate(timestamp, "Africa/Accra", "MMM d, yyyy 'at' h:mm a");
 
-  let cleanAudit = auditText.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+  // Sanitize the raw AI text FIRST to prevent HTML injection crashes
+  let cleanAudit = escapeHTML(auditText);
+  // Then safely apply bolding for Markdown-like double asterisks
+  cleanAudit = cleanAudit.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
   cleanAudit = cleanAudit.replace(/\*/g, "");
 
   const message = `<b>🚨 Lesson Plan Submitted</b>\n\n` +
@@ -114,7 +128,7 @@ function handleSlashCommand(message) {
   ];
 
   if (!allowedIds.includes(chatId)) {
-    Logger.log(`Unauthorized access attempt from Chat ID: ${chatId}`);
+    Logger.log(`Unauthorized slash command attempt from Chat ID: ${chatId}`);
     return; // Silently drop unauthorized requests
   }
 
@@ -172,10 +186,33 @@ function handleSlashCommand(message) {
 
 /**
  * Handles Button Clicks from the leadership team.
+ * SECURED: Includes an Allowlist check to ensure only authorized leadership can click buttons.
  */
 function handleCallbackQuery(callbackQuery) {
   const data = callbackQuery.data;
   const chatId = callbackQuery.message.chat.id;
+  const clickerId = String(callbackQuery.from.id); // Who actually clicked the button?
+
+  // SECURITY: Ensure the person clicking is authorized leadership
+  const allowedIds = [
+    String(CONFIG.TELEGRAM.CHAT_ID_VP),
+    String(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD),
+    String(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD)
+  ];
+
+  if (!allowedIds.includes(clickerId)) {
+    // Flash a warning on the unauthorized user's screen
+    const answerUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/answerCallbackQuery`;
+    UrlFetchApp.fetch(answerUrl, {
+      method: "post",
+      payload: { 
+        callback_query_id: callbackQuery.id, 
+        text: "⛔ Unauthorized: Only leadership can perform this action.", 
+        show_alert: true 
+      }
+    });
+    return; // Exit immediately
+  }
   
   const answerUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/answerCallbackQuery`;
   UrlFetchApp.fetch(answerUrl, {
