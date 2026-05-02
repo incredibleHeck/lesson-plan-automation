@@ -1,0 +1,8 @@
+# Ignore files from clasp push/pull
+**/**
+!*.js
+!appsscript.json
+README.md
+.clasp.json
+.git/
+conductor/

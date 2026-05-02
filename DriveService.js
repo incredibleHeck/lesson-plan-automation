@@ -66,30 +66,34 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
   const fileId = fileIdMatch ? fileIdMatch[0] : null;
   if (!fileId) return null;
 
+  let tempDocFile = null;
+
   try {
     const originalFile = DriveApp.getFileById(fileId);
+    const mimeType = originalFile.getMimeType();
     const newBaseName = `${subjectName} - ${teacherName}`;
-    const isPdf = originalFile.getMimeType() === MimeType.PDF;
     
     let finalFile;
 
-    if (isPdf) {
-      // If it's already a PDF, try to move it
-      originalFile.setName(`${newBaseName}.pdf`);
-      try {
-        originalFile.moveTo(classFolder);
-        finalFile = originalFile;
-      } catch (e) {
-        // Fallback: If move fails (permissions/org barrier), copy it
-        finalFile = originalFile.makeCopy(`${newBaseName}.pdf`, classFolder);
-      }
-    } else {
-      // Convert to PDF
-      const pdfBlob = originalFile.getAs(MimeType.PDF);
+    // SCENARIO 1: It's already a PDF
+    if (mimeType === MimeType.PDF) {
+      finalFile = originalFile.makeCopy(`${newBaseName}.pdf`, classFolder);
+    } 
+    // SCENARIO 2: It's a Word Doc or Google Doc (The "Bridge" Logic)
+    else {
+      // 1. Convert to a temporary Google Doc to stabilize formatting
+      const resource = {
+        name: "Temp_Conversion_" + newBaseName,
+        mimeType: MimeType.GOOGLE_DOCS
+      };
+      
+      // Use the Advanced Drive Service to create the conversion
+      tempDocFile = Drive.Files.create(resource, originalFile.getBlob());
+      
+      // 2. Now export that stable Google Doc to a PDF in the destination folder
+      const pdfBlob = DriveApp.getFileById(tempDocFile.id).getAs(MimeType.PDF);
       pdfBlob.setName(`${newBaseName}.pdf`);
       finalFile = classFolder.createFile(pdfBlob);
-      
-      // SAFETY: We no longer trash the original file automatically to prevent data loss.
     }
 
     return finalFile.getId();
@@ -97,5 +101,14 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
   } catch (e) {
     Logger.log(`Drive Error for ${teacherName}: ${e.message}`);
     return null;
+  } finally {
+    // 3. CLEANUP: Delete the temporary conversion file so your Drive stays clean
+    if (tempDocFile) {
+      try {
+        DriveApp.getFileById(tempDocFile.id).setTrashed(true);
+      } catch (cleanupErr) {
+        Logger.log("Cleanup failed: " + cleanupErr.message);
+      }
+    }
   }
 }
