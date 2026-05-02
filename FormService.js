@@ -69,8 +69,9 @@ function updateTeacherDropdown() {
 /**
  * AUTOMATION TRIGGER: Runs instantly whenever the spreadsheet is edited.
  * If the edit happens on the "Staff Roster" tab, it updates the form.
+ * This must be set up as an Installable Trigger.
  */
-function onEdit(e) {
+function syncRosterToForm(e) {
   if (!e || !e.range) return;
   
   const editedSheet = e.range.getSheet();

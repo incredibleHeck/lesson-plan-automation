@@ -144,4 +144,10 @@ function createTriggers() {
       .onWeekDay(ScriptApp.WeekDay.FRIDAY)
       .atHour(16)
       .create();
+
+  // Automatic Roster Sync (Runs whenever the sheet is edited)
+  ScriptApp.newTrigger('syncRosterToForm')
+      .forSpreadsheet(ss)
+      .onEdit()
+      .create();
 }

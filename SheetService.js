@@ -122,3 +122,41 @@ function getDynamicTeacherRoster() {
   
   return roster;
 }
+
+/**
+ * TIME-TRAVEL ENGINE: Finds the file ID of the teacher's PREVIOUS lesson plan.
+ * Used by Gemini to check for academic continuity between weeks.
+ */
+function getPreviousLessonFileId(teacherName, className, subjectName, currentWeekString) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // 1. Identify the previous week name (e.g., "Week 3" -> "Week 2")
+  const currentWeekMatch = currentWeekString.match(/Week (\d+)/i);
+  if (!currentWeekMatch) return null;
+  
+  const currentWeekNum = parseInt(currentWeekMatch[1]);
+  if (currentWeekNum <= 1) return null; // No continuity check for Week 1
+  
+  const prevWeekName = "Week " + (currentWeekNum - 1);
+  const prevSheet = ss.getSheetByName(prevWeekName);
+  
+  if (!prevSheet) return null;
+
+  // 2. Scan the previous week's sheet for a matching subject and teacher
+  const data = prevSheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const rowClass = data[i][CONFIG.INDICES.CLASS];
+    const rowSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString() : "";
+
+    if (rowTeacher === teacherName && 
+        rowClass === className &&
+        rowSubject.includes(subjectName)) {
+      
+      const link = data[i][CONFIG.INDICES.UPLOAD_LINK];
+      const fileIdMatch = link ? link.match(/[-\w]{25,}/) : null;
+      return fileIdMatch ? fileIdMatch[0] : null;
+    }
+  }
+  return null;
+}
