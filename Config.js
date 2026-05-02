@@ -7,11 +7,16 @@ const scriptProps = PropertiesService.getScriptProperties();
 const CONFIG = {
   MASTER_FOLDER_NAME: "2026 Lesson Plans Master",
   
-  // These are used for automated email routing
+  // These are used for automated email routing and identification
   HOD_EMAILS: {
     LOWER: "alfredashia@stadelaideschools.com",
     UPPER: "abigailsackey@stadelaideschools.com",
     VP: "theodorahammond@stadelaideschools.com"
+  },
+  
+  HOD_NAMES: {
+    LOWER: "Alfred Ashia",
+    UPPER: "Abigail Sackey"
   },
 
   // 1. INDICES FOR INCOMING FORM SUBMISSION (e.values array)
@@ -54,6 +59,8 @@ const CONFIG = {
   },
 
   GEMINI_API_KEY: scriptProps.getProperty("GEMINI_API_KEY"),
+  WEBHOOK_SECRET: scriptProps.getProperty("WEBHOOK_SECRET"), // Security token for the Telegram webhook
+  
   TELEGRAM: {
     BOT_TOKEN: scriptProps.getProperty("TELEGRAM_BOT_TOKEN"),
     CHAT_ID_VP: scriptProps.getProperty("CHAT_ID_VP"),

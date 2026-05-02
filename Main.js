@@ -31,12 +31,12 @@ function onFormSubmit(e) {
   const daysLate = calculateDaysLate(timestamp, deadline);
   const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
 
-  // 2. Immediate HOD Alert if Late (Updated Routing Logic)
+  // 2. Immediate HOD Alert if Late (Patched to use CONFIG.HOD_NAMES and HOD_EMAILS)
   if (daysLate > 0) {
     let hodEmail = null;
-    if (hodName.includes("Alfred Ashia")) {
+    if (hodName.includes(CONFIG.HOD_NAMES.LOWER)) {
       hodEmail = CONFIG.HOD_EMAILS.LOWER;
-    } else if (hodName.includes("Abigail Sackey")) {
+    } else if (hodName.includes(CONFIG.HOD_NAMES.UPPER)) {
       hodEmail = CONFIG.HOD_EMAILS.UPPER;
     }
     
@@ -77,21 +77,28 @@ function onFormSubmit(e) {
 
 /**
  * The Webhook Receiver: Catches incoming messages and button clicks from Telegram.
+ * Security Check: Verifies the secret token in the URL (e.g., ?token=YOUR_SECRET)
  */
 function doPost(e) {
+  // 1. Security Check: Block unauthorized triggers
+  if (!e.parameter.token || e.parameter.token !== CONFIG.WEBHOOK_SECRET) {
+    Logger.log("Unauthorized webhook access attempt.");
+    return HtmlService.createHtmlOutput("Unauthorized");
+  }
+  
   if (!e || !e.postData || !e.postData.contents) {
     return HtmlService.createHtmlOutput("OK");
   }
 
-  // 1. Initialize the Lock Service to prevent database collisions
+  // 2. Initialize the Lock Service to prevent database collisions
   const lock = LockService.getScriptLock();
   
-  // Wait for up to 10 seconds for other instances to finish their database writes
   try {
+    // Wait for up to 10 seconds for other instances to finish their database writes
     lock.waitLock(10000); 
   } catch (err) {
     Logger.log("Lock Timeout: Too many simultaneous webhook requests.");
-    return HtmlService.createHtmlOutput("OK"); // Exit gracefully if the queue is full
+    return HtmlService.createHtmlOutput("OK"); 
   }
 
   try {
@@ -108,7 +115,7 @@ function doPost(e) {
   } catch (err) {
     Logger.log("Webhook Error: " + err.message);
   } finally {
-    // ALWAYS release the lock when finished, even if an error occurred!
+    // ALWAYS release the lock when finished
     lock.releaseLock();
   }
 

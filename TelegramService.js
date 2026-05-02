@@ -91,9 +91,9 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message, approvalKeyboard);
   }
   
-  if (hodName.includes("Alfred Ashia") && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
+  if (hodName.includes(CONFIG.HOD_NAMES.LOWER) && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message, approvalKeyboard);
-  } else if (hodName.includes("Abigail Sackey") && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
+  } else if (hodName.includes(CONFIG.HOD_NAMES.UPPER) && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD, message, approvalKeyboard);
   }
 }
@@ -109,13 +109,12 @@ function handleSlashCommand(message) {
     const parts = text.split(" ");
     let targetWeek = "";
     
-    // Support "/defaulters" (automatic) or "/defaulters Week X"
     if (parts.length > 1) {
       targetWeek = parts.slice(1).join(" ");
     } else {
       const ss = SpreadsheetApp.getActiveSpreadsheet();
       const rawSheet = ss.getSheetByName("Form responses 1");
-      const lastRowData = rawSheet.getRange(rawSheet.getLastRow(), CONFIG.INDICES.WEEK_STARTING + 1).getValue();
+      const lastRowData = rawSheet.getRange(rawSheet.getLastRow(), CONFIG.FORM_INDICES.WEEK_STARTING + 1).getValue();
       targetWeek = extractWeekName(lastRowData);
     }
 
@@ -178,11 +177,10 @@ function handleCallbackQuery(callbackQuery) {
   if (action === "APP" || action === "REV") {
     const shortWeek = parts[1];
     const shortSubj = parts[2];
-    const teacher = parts.slice(3).join("_"); // Safe join for names with underscores
+    const teacher = parts.slice(3).join("_"); 
     const targetSheetName = shortWeek.replace("W", "Week ");
     const fullStatus = action === "APP" ? "✅ APPROVED" : "🚨 REVISION NEEDED";
     
-    // We pass shortSubj to SheetService (needs partial match logic)
     const rowData = updateApprovalStatus(teacher, shortSubj, targetSheetName, fullStatus);
     
     if (rowData) {

@@ -50,9 +50,28 @@ function sendFridayLateReport() {
   }
   const rosterData = rosterSheet.getDataRange().getValues();
 
-  // Find target week from the most recent submission
-  const latestRow = data[data.length - 1];
-  const targetWeek = latestRow[CONFIG.FORM_INDICES.WEEK_STARTING];
+  // Fix: Calculate targetWeek by finding the most common week in the last 15 submissions
+  // rather than just blindly trusting the absolute last row.
+  const recentRows = data.slice(-15);
+  const weekCounts = {};
+  let targetWeek = "";
+  let maxCount = 0;
+
+  recentRows.forEach(row => {
+    const week = row[CONFIG.FORM_INDICES.WEEK_STARTING];
+    if (week) {
+      weekCounts[week] = (weekCounts[week] || 0) + 1;
+      if (weekCounts[week] > maxCount) {
+        maxCount = weekCounts[week];
+        targetWeek = week;
+      }
+    }
+  });
+
+  if (!targetWeek) {
+    Logger.log("Error: Could not determine target week for Friday report.");
+    return;
+  }
 
   let submittedTeachers = [];
   let primaryReport = [];
@@ -80,9 +99,9 @@ function sendFridayLateReport() {
       if (daysLate > 0) {
         const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
         
-        if (hodSelection.includes("Alfred Ashia")) {
+        if (hodSelection.includes(CONFIG.HOD_NAMES.LOWER)) {
           primaryReport.push(entry);
-        } else if (hodSelection.includes("Abigail Sackey")) {
+        } else if (hodSelection.includes(CONFIG.HOD_NAMES.UPPER)) {
           secondaryReport.push(entry);
         }
       }

@@ -17,13 +17,13 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
   }
 
   const rowData = [
-    responses[CONFIG.INDICES.TIMESTAMP],
-    responses[CONFIG.INDICES.WEEK_STARTING],
-    responses[CONFIG.INDICES.HOD],
-    responses[CONFIG.INDICES.TEACHER_NAME],
-    responses[CONFIG.INDICES.CLASS],
-    responses[CONFIG.INDICES.SUBJECT],
-    responses[CONFIG.INDICES.UPLOAD_LINK],
+    responses[CONFIG.FORM_INDICES.TIMESTAMP],
+    responses[CONFIG.FORM_INDICES.WEEK_STARTING],
+    responses[CONFIG.FORM_INDICES.HOD],
+    responses[CONFIG.FORM_INDICES.TEACHER_NAME],
+    responses[CONFIG.FORM_INDICES.CLASS],
+    responses[CONFIG.FORM_INDICES.SUBJECT],
+    responses[CONFIG.FORM_INDICES.UPLOAD_LINK],
     "UNREAD", // Default HOD Check
     daysLate,
     aiAuditText || "Audit Pending/Skipped"
@@ -86,8 +86,7 @@ function updateApprovalStatus(teacherName, subjectCode, sheetName, status) {
 
 /**
  * Dynamically pulls the master teacher list from the "Staff Roster" sheet.
- * Includes case-insensitive department matching.
- * Returns an object: { "Teacher Name": { email: "...", hodEmail: "..." } }
+ * Includes case-insensitive department matching and centralized HOD routing.
  */
 function getDynamicTeacherRoster() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -109,10 +108,10 @@ function getDynamicTeacherRoster() {
     const email = row[2];       // Email in Column C
     
     if (teacherName) {
-      // Safe, lowercase matching for HOD routing
+      // Safe, lowercase matching for HOD routing (Patched to use HOD_EMAILS keys)
       const hodEmail = (department.includes("upper") || department.includes("secondary"))
-                       ? CONFIG.EMAILS.HOD_UPPER_SECONDARY 
-                       : CONFIG.EMAILS.HOD_LOWER_PRIMARY;
+                       ? CONFIG.HOD_EMAILS.UPPER 
+                       : CONFIG.HOD_EMAILS.LOWER;
 
       roster[teacherName] = {
         email: email,
