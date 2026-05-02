@@ -10,8 +10,8 @@ function onFormSubmit(e) {
   
   const responses = e.values; 
   
-  // 1. Data Extraction
-  const timestamp = new Date(responses[CONFIG.INDICES.TIMESTAMP]); 
+  // 1. Data Extraction (DD/MM/YYYY from form/sheet — avoid US MDY mis-parse)
+  const timestamp = parseGhanaianDate(responses[CONFIG.INDICES.TIMESTAMP]);
   const fullWeekString = responses[CONFIG.INDICES.WEEK_STARTING]; 
   const hodName = responses[CONFIG.INDICES.HOD];
   const teacherName = responses[CONFIG.INDICES.TEACHER_NAME];
@@ -59,13 +59,41 @@ function onFormSubmit(e) {
 
   // 5. Blast the audit report to Telegram!
   try {
-    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus);
+    const weekMatch = fullWeekString.match(/Week \d+/i);
+    const cleanWeek = weekMatch ? weekMatch[0] : fullWeekString;
+    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus, cleanWeek);
   } catch (err) {
     Logger.log("Error sending Telegram alert: " + err.message);
   }
 
   // 6. Send Confirmation Receipt to Teacher
   sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString);
+}
+
+/**
+ * The Webhook Receiver: Catches incoming messages and button clicks from Telegram.
+ */
+function doPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return HtmlService.createHtmlOutput("OK");
+  }
+
+  const update = JSON.parse(e.postData.contents);
+
+  try {
+    // Route 1: HOD Button Click
+    if (update.callback_query) {
+      handleCallbackQuery(update.callback_query);
+    }
+    // Route 2: VP/HOD Slash Command
+    else if (update.message && update.message.text) {
+      handleSlashCommand(update.message);
+    }
+  } catch (err) {
+    Logger.log("Webhook Error: " + err.message);
+  }
+
+  return HtmlService.createHtmlOutput("OK");
 }
 
 /**

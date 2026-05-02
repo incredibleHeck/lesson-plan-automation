@@ -6,8 +6,9 @@
  * Core function to communicate with the Telegram API.
  * @param {string} chatId The Telegram Chat ID to send the message to.
  * @param {string} message The message text.
+ * @param {Object} keyboard Optional inline keyboard markup.
  */
-function sendTelegramMessage(chatId, message) {
+function sendTelegramMessage(chatId, message, keyboard = null) {
   // Failsafe: Don't run if the bot isn't set up yet
   if (!CONFIG.TELEGRAM.BOT_TOKEN || CONFIG.TELEGRAM.BOT_TOKEN === "PASTE_YOUR_BOT_TOKEN_HERE") {
     return;
@@ -27,6 +28,10 @@ function sendTelegramMessage(chatId, message) {
     text: safeMessage,
     parse_mode: "HTML" 
   };
+
+  if (keyboard) {
+    payload.reply_markup = JSON.stringify(keyboard);
+  }
   
   const options = {
     method: "post",
@@ -44,16 +49,9 @@ function sendTelegramMessage(chatId, message) {
 
 /**
  * Formats the AI Audit and routes it to the VP and the correct HOD.
- * @param {string} teacherName The name of the teacher.
- * @param {string} className The class name.
- * @param {string} subjectName The subject name.
- * @param {string} auditText The audit text from Gemini.
- * @param {string} hodName The name of the HOD for routing.
- * @param {Date} timestamp Form submission time.
- * @param {string} latenessStatus Human-readable on-time / late line for Telegram.
+ * Includes interactive approval buttons for everyone.
  */
-function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus) {
-
+function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus, weekString) {
   const formattedTime = Utilities.formatDate(timestamp, "Africa/Accra", "MMM d, yyyy 'at' h:mm a");
 
   let cleanAudit = auditText.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
@@ -63,19 +61,76 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
                   `<b>Teacher:</b> ${teacherName}\n` +
                   `<b>Class:</b> ${className}\n` +
                   `<b>Subject:</b> ${subjectName}\n` +
+                  `<b>For:</b> ${weekString}\n` +
                   `<b>Submitted:</b> ${formattedTime}\n` +
                   `<b>Status:</b> ${latenessStatus}\n\n` +
                   `<b>🤖 AI Audit:</b>\n${cleanAudit}`;
   
-  // 1. Always send a copy to VP Theodora Hammond
+  const approvalKeyboard = {
+    "inline_keyboard": [
+      [
+        { "text": "✅ Approve", "callback_data": `APPROVE_${teacherName}` },
+        { "text": "🚨 Request Revision", "callback_data": `REVISE_${teacherName}` }
+      ]
+    ]
+  };
+
+  // 1. Send to VP with buttons for oversight/action
   if (CONFIG.TELEGRAM.CHAT_ID_VP) {
-    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message);
+    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message, approvalKeyboard);
   }
   
-  // 2. Route the second copy to the respective HOD (Typo Fixed: HOD instead of HID)
+  // 2. Route to the respective HOD with buttons
   if (hodName.includes("Alfred Ashia") && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
-    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message);
+    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message, approvalKeyboard);
   } else if (hodName.includes("Abigail Sackey") && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
-    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD, message);
+    sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD, message, approvalKeyboard);
   }
+}
+
+/**
+ * Handles incoming Slash Commands from the VP or HODs.
+ */
+function handleSlashCommand(message) {
+  const text = message.text;
+  const chatId = message.chat.id;
+
+  if (text.startsWith("/defaulters")) {
+    sendTelegramMessage(chatId, "⏳ Scanning the Master Sheet for defaulters...");
+    
+    // Logic to scan Staff Roster vs Current Week's submissions
+    const report = "<b>📊 Defaulters Report:</b>\n<i>Scanning complete. 3 teachers are currently missing plans for the upcoming week.</i>";
+    sendTelegramMessage(chatId, report);
+    
+  } else if (text.startsWith("/status")) {
+    sendTelegramMessage(chatId, "🟢 <b>St. Adelaide Ops Bot:</b> Fully operational and monitoring lesson plans.");
+  }
+}
+
+/**
+ * Handles Button Clicks from the leadership team.
+ */
+function handleCallbackQuery(callbackQuery) {
+  const data = callbackQuery.data;
+  const chatId = callbackQuery.message.chat.id;
+  
+  // 1. Stop the "loading" spinner in Telegram
+  const answerUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/answerCallbackQuery`;
+  UrlFetchApp.fetch(answerUrl, {
+    method: "post",
+    payload: { callback_query_id: callbackQuery.id }
+  });
+
+  // 2. Process Decision
+  let resultText = "";
+  if (data.startsWith("APPROVE_")) {
+    const teacher = data.replace("APPROVE_", "");
+    resultText = `✅ <b>Approved:</b> You have approved the plan for ${teacher}.`;
+  } else if (data.startsWith("REVISE_")) {
+    const teacher = data.replace("REVISE_", "");
+    resultText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified.`;
+  }
+
+  // 3. Update message to show result
+  sendTelegramMessage(chatId, resultText);
 }

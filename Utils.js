@@ -57,12 +57,51 @@ function calculateFridayDeadline(rangeText) {
 }
 
 /**
- * Calculates how many days late a submission is
+ * Calculates the exact number of days late
  */
-function calculateDaysLate(timestamp, deadline) {
-  if (deadline && timestamp > deadline) {
-    const diffTime = Math.abs(timestamp - deadline);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+function calculateDaysLate(submissionDate, deadlineDate) {
+  if (!submissionDate || !deadlineDate) return 0;
+
+  const diffMs = submissionDate.getTime() - deadlineDate.getTime();
+
+  // If the difference is negative or zero, it was submitted before the deadline
+  if (diffMs <= 0) return 0;
+
+  // Convert milliseconds to days and round up to the nearest whole day
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Safely parses DD/MM/YYYY HH:MM:SS strings into valid JavaScript Date objects.
+ * Form timestamps as strings are interpreted in Ghanaian day/month order, not US MDY.
+ */
+function parseGhanaianDate(dateString) {
+  if (!dateString) return new Date();
+
+  if (dateString instanceof Date) return dateString;
+
+  if (typeof dateString !== "string") return new Date(dateString);
+
+  const parts = dateString.split(" ");
+  const dateParts = parts[0].split("/");
+
+  if (dateParts.length === 3) {
+    const day = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const year = parseInt(dateParts[2], 10);
+
+    let hours = 0;
+    let minutes = 0;
+    let seconds = 0;
+    if (parts[1]) {
+      const timeParts = parts[1].split(":");
+      hours = parseInt(timeParts[0], 10);
+      minutes = parseInt(timeParts[1], 10);
+      seconds = parseInt(timeParts[2] || 0, 10);
+    }
+
+    return new Date(year, month, day, hours, minutes, seconds);
   }
-  return 0;
+
+  return new Date(dateString);
 }

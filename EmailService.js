@@ -65,7 +65,7 @@ function sendFridayLateReport() {
     const classLevel = data[i][CONFIG.INDICES.CLASS];
     const hodSelection = data[i][CONFIG.INDICES.HOD];
 
-    const timestamp = new Date(data[i][CONFIG.INDICES.TIMESTAMP]);
+    const timestamp = parseGhanaianDate(data[i][CONFIG.INDICES.TIMESTAMP]);
 
     if (weekString === targetWeek) {
       submittedTeachers.push(teacher);
