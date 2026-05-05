@@ -220,7 +220,11 @@ function handleSlashCommand(message) {
 
     // 4. Send the final report
     if (missingRows.length > 0) {
-      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\n\n${reportLines.join("\n")}\n\nTap to send an urgent reminder:`;
+      // CRITICAL: We MUST inject the reportLines array here to show the grouped classes.
+      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\n\n` + 
+                     `${reportLines.join("\n")}\n\n` + 
+                     `Tap to send an urgent reminder:`;
+                     
       sendTelegramMessage(chatId, report, { "inline_keyboard": missingRows });
     } else {
       sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All rostered teachers have submitted their complete teaching load for ${targetWeek}!`);
