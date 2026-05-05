@@ -10,9 +10,11 @@
  * @param {string} className The class name for context (e.g., Year 1 Benjamin).
  * @param {string} subjectName The subject name for context.
  * @param {string} previousFileId The ID of the previous week's file (optional).
+ * @param {{ isResubmission: boolean, previousAudit: *, revisionCount: number }} resubmissionData Prior-row context for re-audits (optional).
+ * @param {number} expectedLessons Required lessons per week from Teaching Load (default 1).
  * @returns {string} The AI-generated summary and compliance check.
  */
-function generateAiSummary(fileId, className, subjectName, previousFileId) {
+function generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons = 1) {
   if (!fileId) return "AI Audit Skipped: No file provided.";
   if (!CONFIG.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY === "PASTE_YOUR_API_KEY_HERE") {
     return "AI Audit Skipped: No API Key provided.";
@@ -69,7 +71,7 @@ function generateAiSummary(fileId, className, subjectName, previousFileId) {
     }
 
     // 4. Generate the Audit
-    return generateAudit(currentText, previousText, subjectCriteria, className, subjectName);
+    return generateAudit(currentText, previousText, subjectCriteria, className, subjectName, resubmissionData, expectedLessons);
 
   } catch (error) {
     Logger.log("AI Service Error: " + error);
@@ -80,28 +82,36 @@ function generateAiSummary(fileId, className, subjectName, previousFileId) {
 /**
  * Core function to call Gemini 3.1 Pro Preview with strict formatting and context.
  */
-function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, subjectName) {
+function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, subjectName, resubmissionData, expectedLessons = 1) {
   // SECURED: API key moved to Header
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`;
   
-  const systemInstruction = 
+  const systemInstruction =
     "You are a Cambridge-certified academic auditor for St. Adelaide International Schools. " +
-    "Review this lesson plan and provide an EXTREMELY concise audit. " +
+    `CRITICAL TASK: The teacher is expected to submit plans for ${expectedLessons} Lessons/WK for this subject. ` +
+    "You must count the distinct lesson plans/periods within the provided text. " +
     "CRITICAL RULES: " +
     "1. DO NOT write paragraphs. You must use short, punchy bullet points. " +
     "2. MAXIMUM of 3 bullet points per section (Strengths & Flags). " +
     "3. Provide a strict quantitative rating out of 10, formatted as a float (e.g., 7.5/10). " +
-    "4. Structure your response EXACTLY like this:\n\n" +
+    "4. AUTOMATED DECISION ENGINE: A rating of 7.0 or higher is an automatic PASS. Anything 6.9 or lower is an automatic FAIL/REVISION. Be objective but firm.\n\n" +
+    "Structure your response EXACTLY like this:\n\n" +
     "📖 TOPIC: [Extract the main topic of this lesson]\n" +
-    "🎯 OBJECTIVES: [Extract 1-2 core Learning Objectives]\n\n" +
+    "🎯 OBJECTIVES: [Extract 1-2 core Learning Objectives]\n" +
+    "⏱️ LESSONS DETECTED: [Found Count] / [Expected Count]\n\n" +
     "🏆 STRENGTHS:\n• [Point 1]\n• [Point 2]\n• [Point 3]\n\n" +
     "🚨 FLAGS:\n• [Point 1]\n• [Point 2]\n• [Point 3]\n\n" +
     "📊 RATING: [Float]/10\n" +
-    "✅ STATUS: [Approved or Needs Revision]";
+    "✅ STATUS: [If RATING is 7.0 or higher, output '✅ APPROVED'. If RATING is 6.9 or lower, output '🚨 REVISION NEEDED']";
 
   // Apply a 15,000 character safety cap to prevent payload/token crashes
   const safeCurrentText = currentText ? currentText.substring(0, 15000) : "No text found.";
   let userPrompt = `Audit this ${subjectName} lesson plan for ${gradeLevel}.\n\nCURRENT LESSON PLAN TEXT:\n${safeCurrentText}`;
+
+  // Inject Resubmission Context (Re-Audit Logic)
+  if (resubmissionData && resubmissionData.isResubmission && resubmissionData.previousAudit) {
+    userPrompt += `\n\n⚠️ REVISION CONTEXT: This is a resubmitted lesson plan (Revision ${resubmissionData.revisionCount}). The previous draft was rejected/flagged with the following AI feedback:\n${resubmissionData.previousAudit}\n\nCRITICAL RE-AUDIT REQUIREMENT: Verify if the teacher actually fixed these specific flags. If they ignored the feedback, call it out aggressively in the FLAGS section.`;
+  }
 
   // Inject the previous week's context if it exists (capped at 3,000 chars)
   if (previousText) {

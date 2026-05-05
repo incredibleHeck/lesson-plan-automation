@@ -1,48 +1,61 @@
-# St. Adelaide Lesson Plan Automation
+# St. Adelaide Lesson Plan Automation (HeckTeck 2.0)
 
-An enterprise-grade Google Apps Script (GAS) system designed to automate the lesson plan intake, filing, and auditing lifecycle for St. Adelaide International Schools. This system leverages AI to ensure academic continuity and provides leadership with real-time oversight via Telegram.
+An enterprise-grade Google Apps Script (GAS) system for St. Adelaide International Schools: lesson plan intake, Drive filing, AI auditing against Cambridge criteria, a **Teaching Load** deliverables matrix, and real-time leadership oversight via Telegram.
 
-## 🚀 Features
+## Features
 
-- **Automated Filing & Conversion:** Automatically organizes submissions into a chronological folder structure on Google Drive. Converts Microsoft Word (`.docx`) files to PDF using a Google Doc "bridge" to ensure 100% formatting stability.
-- **AI Academic Audits:** Integrates **Gemini 1.5 Pro** to perform automated audits. The AI evaluates plans against Cambridge standards (e.g., TWM in Math, Science in Context) and checks for **Subject Continuity** between weeks.
-- **Leadership Oversight (Telegram):** Sends real-time audit reports to HODs and the VP via Telegram. Features interactive buttons for immediate "Approval" or "Revision Request" directly from the chat.
-- **Lateness & Missing Reports:** Automatically recomputes lateness based on a Friday 23:59:59 deadline and generates a "Friday Late Report" identifying defaulters and late submissions.
-- **Teacher Nudges:** Provides an interface for leadership to send "Urgent Nudge" emails to teachers with a single click.
-- **Self-Healing Permissions:** Automatically manages Drive and Spreadsheet permissions for the leadership team.
+- **Automated filing and conversion:** Organizes submissions into a chronological folder structure on Google Drive. Converts Microsoft Word (`.docx`) files to PDF using a Google Doc bridge for stable formatting.
+- **AI academic audits (Gemini 3.1 Pro Preview):** Calls the **`gemini-3.1-pro-preview`** model via the Generative Language API. Audits use subject-aware Cambridge-style rubrics, **weekly lesson-count completeness** (from the matrix), **subject continuity** with the previous week’s plan when a prior file exists, and **resubmission / re-audit** context when the same teacher/class/subject row already exists for that week. The model outputs a fixed layout including **LESSONS DETECTED: found / expected**, a **RATING** out of 10, and **STATUS** with a school-wide threshold (**7.0+ suggested as APPROVED**, **6.9 or below as REVISION NEEDED**). HODs still make the final call in Telegram.
+- **Phase 2 — Deliverables matrix:** **`Teaching Load`** sheet (Teacher, Class, Subject, Lessons/WK) defines what each teacher must submit. The Friday email report compares form submissions to that matrix (normalized keys), so missing work is reported per **class/subject**, not only “did the teacher submit something.”
+- **Phase 3 — Lesson count awareness:** Expected lessons per week are passed into the audit; Telegram can show a **partial submission** banner when parsed counts fall short of expected.
+- **Resubmission lifecycle:** New submissions for the same teacher/class/subject on the same week tab carry prior AI feedback into the prompt; Telegram headers flag **RESUBMISSION** with a revision counter.
+- **Leadership oversight (Telegram):** Audit summaries go to the VP and relevant HOD with inline **Approve** / **Request Revision** actions (human-in-the-loop).
+- **Lateness and Friday reports:** Lateness uses the Friday-before-week-start deadline (`CONFIG.DEADLINE`). The Friday report lists late submissions (by HOD routing) and **missing** matrix deliverables (using **Staff Roster** for Upper vs Lower routing).
+- **Teacher nudges:** Slash commands and callbacks help leadership nudge missing teachers and update sheet status.
+- **Roster and form sync:** **`FormService.js`** can sync the form teacher list from **Staff Roster**.
+- **Self-healing permissions:** Drive and spreadsheet access patterns for the automation account remain documented in the conductor notes.
 
-## 🛠️ Tech Stack
+## Tech stack
 
-- **Language:** JavaScript (Google Apps Script - V8 Runtime)
-- **AI:** Google Gemini API (Generative AI)
-- **Messaging:** Telegram Bot API (Webhooks)
-- **Storage:** Google Drive API & Google Sheets
-- **Deployment:** `clasp` (Command Line Apps Script Projects)
+- **Language:** JavaScript (Google Apps Script, V8)
+- **AI:** Google Generative Language API — **Gemini 3.1 Pro Preview** (`gemini-3.1-pro-preview`)
+- **Messaging:** Telegram Bot API (webhooks)
+- **Storage:** Google Drive API (Advanced Service), Google Sheets
+- **Deployment:** `clasp` (optional local sync)
 
-## 📂 Project Structure
+## Project structure
 
 | File | Description |
 |------|-------------|
-| `Main.js` | Core orchestration logic and trigger handlers. |
-| `AiService.js` | OCR extraction and Gemini AI audit logic. |
-| `DriveService.js` | File organization, renaming, and Word-to-PDF conversion. |
-| `TelegramService.js` | Webhook handling and interactive bot messaging. |
-| `SheetService.js` | Weekly tab management and data routing. |
-| `EmailService.js` | Automated receipts, alerts, and Friday reports. |
-| `FormService.js` | Staff roster synchronization with Google Forms. |
-| `Config.js` | Centralized configuration and secret retrieval. |
-| `Utils.js` | Date parsing, deadline calculations, and string helpers. |
+| `Main.js` | `onFormSubmit` orchestration, `doPost` webhook entry, `createTriggers` |
+| `AiService.js` | PDF OCR via Drive, Gemini audit prompts and API call |
+| `DriveService.js` | Master folder, move/rename, Word→PDF |
+| `TelegramService.js` | Audit alerts, partial-count warning, approval callbacks, slash commands |
+| `SheetService.js` | Weekly tabs, logging, roster, previous-week file lookup, resubmission data, teaching load, expected lesson count |
+| `EmailService.js` | Receipts, immediate late alerts, Friday late/missing report |
+| `FormService.js` | Roster → form dropdown sync |
+| `Config.js` | `CONFIG`, indices, headers, Script Properties |
+| `Utils.js` | Ghanaian date parsing, deadlines, week helpers |
 
-## ⚙️ Setup
+## Spreadsheet model
 
-1. **Environment:** Use `clasp` to manage the project locally.
-2. **Secrets:** Configure the following in **Script Properties** (Apps Script Project Settings):
-   - `GEMINI_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - `CHAT_ID_VP`, `CHAT_ID_LOWER_HOD`, `CHAT_ID_UPPER_HOD`
-   - `WEBHOOK_SECRET` (For Telegram security)
-3. **Advanced Services:** Ensure **Drive API v3** is enabled in the Apps Script editor.
-4. **Triggers:** Run `createTriggers()` once from `Main.js` to initialize the automation.
+- **`Form responses 1`** — raw form responses (no AI column; used for triggers and Friday scanning).
+- **`Staff Roster`** — teacher name, department, email (HOD routing).
+- **`Teaching Load`** — expected deliverables and **Lessons/WK** per teacher/class/subject.
+- **`Week 1`, `Week 2`, …** — one tab per week with logged rows including **AI Audit**, **Days Late**, **HOD Check**.
+
+## Setup
+
+1. **Environment:** Use `clasp` to push/pull if you maintain the script from this repo.
+2. **Secrets (Script Properties):** `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `CHAT_ID_VP`, `CHAT_ID_LOWER_HOD`, `CHAT_ID_UPPER_HOD`, `WEBHOOK_SECRET`, plus email-related properties as set in `Config.js`.
+3. **Advanced services:** Enable **Drive API v3** in the Apps Script editor.
+4. **Triggers:** Run `createTriggers()` once from the editor.
+5. **Data quality:** **Teaching Load** names should match form **Teacher / Class / Subject** text (normalization ignores case and spaces).
+
+## Board / BI note
+
+Aggregated reporting (e.g. Looker Studio) should read from **weekly tabs** or a dedicated rollup sheet that includes the **AI Audit** column—not from **Form responses 1** alone. See `conductor/heckteck-enterprise-proposal.md` for context.
 
 ---
-*Note: This README is excluded from Apps Script via `.claspignore` and is intended for repository documentation only.*
+
+*This README is excluded from Apps Script via `.claspignore` and is for repository documentation only.*

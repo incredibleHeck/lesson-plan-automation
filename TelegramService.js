@@ -71,7 +71,7 @@ function sendTelegramMessage(chatId, message, keyboard = null) {
  * Formats the AI Audit and routes it to leadership with approval buttons.
  * Data: Action_Week_Subject_Teacher
  */
-function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus, weekString) {
+function sendAuditAlert(teacherName, className, subjectName, auditText, hodName, timestamp, latenessStatus, weekString, revisionCount = 0) {
   const formattedTime = Utilities.formatDate(timestamp, "Africa/Accra", "MMM d, yyyy 'at' h:mm a");
 
   // Sanitize the raw AI text FIRST to prevent HTML injection crashes
@@ -80,7 +80,22 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
   cleanAudit = cleanAudit.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
   cleanAudit = cleanAudit.replace(/\*/g, "");
 
-  const message = `<b>🚨 Lesson Plan Submitted</b>\n\n` +
+  let partialWarning = "";
+  const match = cleanAudit.match(/LESSONS DETECTED:\s*(\d+)\s*\/\s*(\d+)/i);
+
+  if (match) {
+    const found = parseInt(match[1], 10);
+    const expected = parseInt(match[2], 10);
+    if (found < expected) {
+      partialWarning = `\n\n⚠️ <b>PARTIAL SUBMISSION WARNING:</b> Teacher submitted ${found} lessons, but ${expected} Lessons/WK are required!`;
+    }
+  }
+
+  const headerTitle = revisionCount > 0
+      ? `<b>🚨 [RESUBMISSION - REVISION ${revisionCount}]</b>`
+      : `<b>🚨 Lesson Plan Submitted</b>`;
+
+  const message = `${headerTitle}${partialWarning}\n\n` +
                   `<b>Teacher:</b> ${teacherName}\n` +
                   `<b>Class:</b> ${className}\n` +
                   `<b>Subject:</b> ${subjectName}\n` +
@@ -156,27 +171,56 @@ function handleSlashCommand(message) {
     }
 
     const submissionData = weeklySheet.getDataRange().getValues();
-    let submittedTeachers = new Set();
+    
+    // 1. Build a Set of exactly what WAS submitted on this weekly tab
+    let submittedSet = new Set();
     for (let i = 1; i < submissionData.length; i++) {
-      submittedTeachers.add(submissionData[i][CONFIG.INDICES.TEACHER_NAME]);
+      const teacher = submissionData[i][CONFIG.INDICES.TEACHER_NAME];
+      const classLevel = submissionData[i][CONFIG.INDICES.CLASS];
+      const subject = submissionData[i][CONFIG.INDICES.SUBJECT];
+      
+      if (teacher && classLevel && subject) {
+        // Normalize the key to match the matrix
+        const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, '');
+        submittedSet.add(subKey);
+      }
     }
 
-    const liveRoster = getDynamicTeacherRoster();
-    let missingRows = [];
-    
-    Object.keys(liveRoster).forEach(teacher => {
-      if (!submittedTeachers.has(teacher)) {
-        missingRows.push([
-          { "text": `📲 Nudge ${teacher}`, "callback_data": `NUDGE_${teacher}` }
-        ]);
+    // 2. Cross-reference with the Teaching Load Matrix
+    const teachingLoad = getTeachingLoad(); // Fetched from SheetService.js
+    let missingByTeacher = {}; // Group missing items by teacher for a cleaner UI
+
+    teachingLoad.forEach(load => {
+      const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, '');
+      
+      if (!submittedSet.has(loadKey)) {
+        if (!missingByTeacher[load.teacherName]) {
+          missingByTeacher[load.teacherName] = [];
+        }
+        missingByTeacher[load.teacherName].push(`${load.subjectName} (${load.className})`);
       }
     });
 
+    // 3. Build the Telegram UI Payload
+    let missingRows = [];
+    let reportLines = [];
+    
+    Object.keys(missingByTeacher).forEach(teacher => {
+      const missingItems = missingByTeacher[teacher].join(", ");
+      reportLines.push(`• <b>${teacher}</b>: Missing ${missingItems}`);
+      
+      // Add a single Nudge button for the teacher
+      missingRows.push([
+        { "text": `📲 Nudge ${teacher}`, "callback_data": `NUDGE_${teacher}` }
+      ]);
+    });
+
+    // 4. Send the final report
     if (missingRows.length > 0) {
-      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\nThe following teachers are missing plans. Tap to send a nudge:`;
+      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\n\n${reportLines.join("\n")}\n\nTap to send an urgent reminder:`;
       sendTelegramMessage(chatId, report, { "inline_keyboard": missingRows });
     } else {
-      sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All rostered teachers have submitted plans for ${targetWeek}!`);
+      sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All rostered teachers have submitted their complete teaching load for ${targetWeek}!`);
     }
     
   } else if (text.startsWith("/status")) {

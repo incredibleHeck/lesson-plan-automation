@@ -56,8 +56,12 @@ function onFormSubmit(e) {
   // 4. TIME-TRAVEL: GET PREVIOUS WEEK'S FILE
   const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, fullWeekString);
 
+  const resubmissionData = getResubmissionData(teacherName, className, subjectName, fullWeekString);
+
+  const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
+
   // 5. GENERATE AUDIT (NOW WITH CONTINUITY!)
-  const aiAuditText = generateAiSummary(fileId, className, subjectName, previousFileId);
+  const aiAuditText = generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons);
 
   // 6. Log to Sheet (Routing & Highlighting)
   logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
@@ -66,7 +70,7 @@ function onFormSubmit(e) {
   try {
     const weekMatch = fullWeekString.match(/Week \d+/i);
     const cleanWeek = weekMatch ? weekMatch[0] : fullWeekString;
-    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus, cleanWeek);
+    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus, cleanWeek, resubmissionData.revisionCount);
   } catch (err) {
     Logger.log("Error sending Telegram alert: " + err.message);
   }

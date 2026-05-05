@@ -1,50 +1,70 @@
 # Lesson plan automation (Google Apps Script)
 
-Automates St. Adelaide lesson plan intake: form submit → Drive filing, weekly sheet rows, Gemini audit, email/Telegram alerts, and a Friday late/missing report.
+End-to-end automation for St. Adelaide lesson plans: **form submit → Drive filing → weekly sheet row → Gemini 3.1 Pro Preview audit → email & Telegram**, plus a **Friday report** driven by the **Teaching Load** matrix.
 
 ## Script layout (clasp)
 
 | File | Role |
 |------|------|
-| `Config.js` | `CONFIG`, emails, indices, headers, `DEADLINE`; secrets from Script Properties |
-| `Main.js` | `onFormSubmit`, `createTriggers` |
-| `Utils.js` | Week parsing, Friday deadline, lateness |
-| `DriveService.js` | Master folder, move/rename/PDF, Drive file ID from URL |
-| `SheetService.js` | Weekly tabs and row logging |
-| `FormService.js` | Sync teacher dropdown from Staff Roster |
-| `AiService.js` | OCR + Gemini audit |
-| `EmailService.js` | Receipts, late alerts, Friday report |
-| `TelegramService.js` | Audit alerts to VP/HOD |
-| `appsscript.json` | Runtime V8, timezone (`Africa/Abidjan`, GMT) |
+| `Config.js` | `CONFIG`, HOD names/emails, form vs weekly column indices, headers, `DEADLINE`; secrets from Script Properties |
+| `Main.js` | `onFormSubmit`, `doPost` (Telegram), `createTriggers` |
+| `Utils.js` | Week parsing (`extractWeekName`), Friday deadline, lateness, Ghanaian date parsing |
+| `DriveService.js` | `CONFIG.MASTER_FOLDER_NAME`, move/rename, Word→PDF, file ID from URL |
+| `SheetService.js` | `logSubmissionToSheet` (weekly tabs), `updateApprovalStatus`, `getDynamicTeacherRoster`, `getPreviousLessonFileId`, `getResubmissionData`, `getTeachingLoad`, `getExpectedLessonCount` |
+| `FormService.js` | Sync form teacher dropdown from **Staff Roster** |
+| `AiService.js` | `extractTextFromPdf` (Drive OCR), **`gemini-3.1-pro-preview`** audit: Cambridge rubric, continuity, resubmission context, **Lessons/WK** completeness, fixed output format (topic, objectives, lessons detected, strengths, flags, rating, status with **7.0 threshold** in prompt) |
+| `EmailService.js` | Teacher receipt, immediate late HOD alert, **`sendFridayLateReport`** (late rows + missing matrix rows vs **Teaching Load**) |
+| `TelegramService.js` | `sendAuditAlert` (resubmission header, partial-lesson warning from parsed audit), approval callbacks, `/defaulters`, `/status` |
+| `appsscript.json` | V8 runtime, timezone |
 
-## Secrets (required): Script Properties
+## AI model
 
-In the Apps Script editor: **Project Settings** (gear) → **Script Properties** → add:
+- **API:** `generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`
+- **Key:** Script Property `GEMINI_API_KEY`
+
+## Spreadsheet tabs
+
+| Tab | Purpose |
+|-----|---------|
+| `Form responses 1` | Linked form responses (columns per `CONFIG.FORM_INDICES`); basis for Friday scan of *submissions* |
+| `Staff Roster` | Name, department, email → `getDynamicTeacherRoster()` and HOD email routing |
+| `Teaching Load` | Teacher, Class, Subject, Lessons/WK → expected deliverables and `getExpectedLessonCount()` |
+| `Week N` | Appended rows with HOD check, days late, **AI Audit** text (used for resubmission history and BI) |
+
+## Feature phases (logic overview)
+
+1. **Resubmission / re-audit:** Before audit, `getResubmissionData` scans the current week tab for prior rows with the same teacher/class/subject; prior **AI Audit** text is injected into the user prompt. Telegram titles show resubmission revision count.
+2. **Deliverables matrix:** Friday missing detection uses a `Set` of normalized `teacher_class_subject` keys from form rows for the target week, cross-checked against `getTeachingLoad()`; routing uses roster `hodEmail` vs `CONFIG.HOD_EMAILS.UPPER`.
+3. **Lesson count:** `getExpectedLessonCount` reads **Lessons/WK** for the row matching the submission; passed into `generateAiSummary` / `generateAudit`. Telegram parses `LESSONS DETECTED: x / y` in the sanitized audit and may prepend a partial-submission warning.
+
+## Secrets (Script Properties)
+
+**Project Settings → Script Properties:**
 
 - `GEMINI_API_KEY`
 - `TELEGRAM_BOT_TOKEN`
-- `CHAT_ID_VP`
-- `CHAT_ID_LOWER_HOD`
-- `CHAT_ID_UPPER_HOD`
+- `CHAT_ID_VP`, `CHAT_ID_LOWER_HOD`, `CHAT_ID_UPPER_HOD`
+- `WEBHOOK_SECRET`
+- Optional overrides: `EMAIL_*`, `NAME_*` per `Config.js`
 
-Never commit these values to GitHub.
+Never commit live values to git.
 
 ## Behaviour notes
 
-- **Deadline:** The Friday **immediately before** the week’s start date (parsed from the week-range string), at 23:59:59 in the script timezone (`CONFIG.DEADLINE` + `calculateFridayDeadline`). Teachers must submit before that moment; plans for past weeks show large lateness correctly.
-- **Friday report:** Lateness is recomputed from each row’s timestamp and week string (not read from weekly tabs).
-- **Drive links:** If the configured upload column is empty or lacks a URL, `onFormSubmit` scans all response cells for the first `drive.google.com` string (handles reordered form questions). File IDs are parsed with a regex so `/file/d/…` and `open?id=…` style URLs both work.
+- **Deadline:** Friday immediately before the week start (from the week-range string), `23:59:59` via `CONFIG.DEADLINE` and `calculateFridayDeadline`.
+- **Friday report target week:** Mode of **Week starting** among the **last 15** form rows (not only the last row).
+- **Drive links:** If the configured upload column is empty, `onFormSubmit` scans response values for `drive.google.com`.
+- **Matrix / form alignment:** Keys strip spaces and lower-case; teacher/class/subject strings should match **Teaching Load** and **Staff Roster** names to avoid false MISSING flags.
+- **HOD vs AI:** Sheet/Telegram **Approve** / **Revision** actions are human; AI STATUS is guidance from the prompt rules.
 
 ## Drive permissions
 
-Uploads from Google Forms live in the Form’s linked **responses folder**, owned by the Form creator. The Apps Script runs as a specific Google account (the project owner or execution identity).
-
-- Open the **Google Form** → **Responses** → use the folder icon to open the linked Drive folder for file uploads.
-- **Share** that folder with the account that runs the script (**Editor**), or use an organization-wide rule your school allows for testing.
-- Ensure that account can still access files **after** they are moved into `CONFIG.MASTER_FOLDER_NAME`. If the master folder is restricted to VP/HOD only, add the script runner as **Editor** on that folder (or run the automation as an account that owns both the Form-linked folder and the destination folder).
-
-Without this, `DriveApp.getFileById` may fail with permission errors and the AI audit will skip when `fileId` is null.
+Uploads from Google Forms live in the form’s linked responses folder. The account that runs the script needs **Editor** (or equivalent) on that folder and on `CONFIG.MASTER_FOLDER_NAME` so `DriveApp.getFileById` and moves succeed. See historical notes in this repo if moves fail after permission changes.
 
 ## Triggers
 
-Run `createTriggers()` once from the editor to register form-submit and Friday time-based triggers.
+Run `createTriggers()` once: form submit, Friday report time trigger, roster sync on edit (see `Main.js`).
+
+## Related doc
+
+- `conductor/heckteck-enterprise-proposal.md` — board-facing summary and Looker / data-source notes

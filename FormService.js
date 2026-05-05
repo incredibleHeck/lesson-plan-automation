@@ -3,81 +3,97 @@
  */
 
 /**
- * Automatically updates the teacher dropdown in the Google Form
- * using the list from the "Staff Roster" sheet.
+ * COMPREHENSIVE SETUP: Updates Class, Subject, and Teacher dropdowns.
+ * Run this whenever the Teaching Load matrix or Staff Roster changes.
  */
-function updateTeacherDropdown() {
+function updateAllFormDropdowns() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const rosterSheet = ss.getSheetByName("Staff Roster");
-  
-  if (!rosterSheet) {
-    Logger.log("Error: Could not find the 'Staff Roster' tab.");
-    return;
-  }
-
-  const lastRow = rosterSheet.getLastRow();
-  if (lastRow < 2) return;
-
-  // 1. Get and sanitize names
-  const rosterData = rosterSheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  const teacherNames = rosterData
-    .map(row => row[0])
-    .filter(name => name && name.toString().trim() !== "")
-    .sort(); 
-
   const formUrl = ss.getFormUrl();
+
   if (!formUrl) {
-    Logger.log("Error: No form linked to this spreadsheet.");
+    Logger.log("❌ Error: No Google Form is linked to this spreadsheet.");
     return;
   }
-  
-  try {
-    const form = FormApp.openByUrl(formUrl);
-    const items = form.getItems();
-    let teacherQuestion = null;
 
-    // 2. Safer Question Targeting (Case-insensitive, substring match)
-    for (let i = 0; i < items.length; i++) {
-      const title = items[i].getTitle().toLowerCase();
-      if (title.includes("teacher") && title.includes("name")) {
-        teacherQuestion = items[i];
-        break;
-      }
-    }
+  const form = FormApp.openByUrl(formUrl);
+  const items = form.getItems(FormApp.ItemType.LIST);
 
-    if (teacherQuestion) {
-      // 3. Safe Type Casting
-      const itemType = teacherQuestion.getType();
-      
-      if (itemType === FormApp.ItemType.LIST) {
-        teacherQuestion.asListItem().setChoiceValues(teacherNames);
-        Logger.log(`Form dropdown updated with ${teacherNames.length} teachers.`);
-      } else if (itemType === FormApp.ItemType.MULTIPLE_CHOICE) {
-        teacherQuestion.asMultipleChoiceItem().setChoiceValues(teacherNames);
-        Logger.log(`Form multiple-choice updated with ${teacherNames.length} teachers.`);
-      } else {
-        Logger.log(`Error: The Teacher Name question is the wrong type (${itemType}). Please change it to a Dropdown.`);
-      }
-    } else {
-      Logger.log("Error: Could not find a question containing 'Teacher Name'.");
+  // 1. Data Source: Teacher Names from Staff Roster
+  const rosterSheet = ss.getSheetByName("Staff Roster");
+  let teacherNames = [];
+  if (rosterSheet) {
+    const lastRow = rosterSheet.getLastRow();
+    if (lastRow >= 2) {
+      teacherNames = rosterSheet.getRange(2, 1, lastRow - 1, 1).getValues()
+        .map(row => row[0])
+        .filter(name => name && name.toString().trim() !== "")
+        .sort();
     }
-  } catch (err) {
-    Logger.log("Error updating form: " + err.message);
   }
+
+  // 2. Data Source: Standardized Classes (Combined Cohort Strategy)
+  const classList = [
+    "Year 1A", "Year 1B", "Year 1 (A & B)",
+    "Year 2A", "Year 2B", "Year 2 (A & B)",
+    "Year 3A", "Year 3B", "Year 3 (A & B)",
+    "Year 4A", "Year 4B", "Year 4 (A & B)",
+    "Year 5A", "Year 5B", "Year 5 (A & B)",
+    "Year 6A", "Year 6B", "Year 6 (A & B)",
+    "Year 7", "Year 8", "Year 9", "Year 10", "Year 11", "Year 12"
+  ];
+
+  // 3. Data Source: Standardized Subjects
+  const subjectList = [
+    "Arts",
+    "Bible Knowledge",
+    "Biology",
+    "Business Studies",
+    "Chemistry",
+    "Economics",
+    "English Language",
+    "French",
+    "Geography",
+    "History",
+    "Humanities",
+    "Information and Communication Technology (ICT)",
+    "Literature in English",
+    "Mathematics",
+    "Music",
+    "Physics",
+    "Science"
+  ];
+
+  // 4. Update the Form Items
+  items.forEach(item => {
+    const title = item.getTitle().trim();
+    const listItem = item.asListItem();
+
+    if (title === "Class") {
+      listItem.setChoiceValues(classList);
+      Logger.log("✅ Updated 'Class' dropdown.");
+    } else if (title === "Subject") {
+      listItem.setChoiceValues(subjectList);
+      Logger.log("✅ Updated 'Subject' dropdown.");
+    } else if (title.toLowerCase().includes("teacher") && title.toLowerCase().includes("name")) {
+      if (teacherNames.length > 0) {
+        listItem.setChoiceValues(teacherNames);
+        Logger.log("✅ Updated 'Teacher Name' dropdown.");
+      }
+    }
+  });
 }
 
 /**
- * AUTOMATION TRIGGER: Runs instantly whenever the spreadsheet is edited.
- * If the edit happens on the "Staff Roster" tab, it updates the form.
- * This must be set up as an Installable Trigger.
+ * AUTOMATION TRIGGER: Runs whenever the spreadsheet is edited.
+ * If the edit happens on specific tabs, it refreshes the form dropdowns.
  */
 function syncRosterToForm(e) {
   if (!e || !e.range) return;
   
-  const editedSheet = e.range.getSheet();
+  const editedSheetName = e.range.getSheet().getName();
   
-  // Only trigger the form update if they are actively modifying the Staff Roster
-  if (editedSheet.getName() === "Staff Roster") {
-    updateTeacherDropdown();
+  // Refresh if Staff Roster or Teaching Load is modified
+  if (editedSheetName === "Staff Roster" || editedSheetName === "Teaching Load") {
+    updateAllFormDropdowns();
   }
 }

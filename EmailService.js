@@ -41,14 +41,6 @@ function sendFridayLateReport() {
   const rawSheet = ss.getSheetByName("Form responses 1"); 
   if (!rawSheet) return;
   const data = rawSheet.getDataRange().getValues();
-  
-  // 2. Get the Staff Roster Data (Fixed Tab Name)
-  const rosterSheet = ss.getSheetByName("Staff Roster");
-  if (!rosterSheet) {
-    Logger.log("Error: Could not find the 'Staff Roster' tab.");
-    return;
-  }
-  const rosterData = rosterSheet.getDataRange().getValues();
 
   // Fix: Calculate targetWeek by finding the most common week in the last 15 submissions
   // rather than just blindly trusting the absolute last row.
@@ -73,32 +65,36 @@ function sendFridayLateReport() {
     return;
   }
 
-  let submittedTeachers = [];
   let primaryReport = [];
   let secondaryReport = [];
 
-  // 1. Scan submissions for LATE and identifying who submitted
+  // 1. Scan submissions and build a Set of what WAS submitted
+  const submittedSet = new Set();
+
   for (let i = 1; i < data.length; i++) {
     const timestampStr = data[i][CONFIG.FORM_INDICES.TIMESTAMP];
     if (!timestampStr) continue; // Skip empty rows
 
     const weekString = data[i][CONFIG.FORM_INDICES.WEEK_STARTING];
-    const teacher = data[i][CONFIG.FORM_INDICES.TEACHER_NAME];
-    const classLevel = data[i][CONFIG.FORM_INDICES.CLASS];
-    const hodSelection = data[i][CONFIG.FORM_INDICES.HOD];
-
-    const timestamp = parseGhanaianDate(timestampStr);
 
     if (weekString === targetWeek) {
-      submittedTeachers.push(teacher);
+      const teacher = data[i][CONFIG.FORM_INDICES.TEACHER_NAME].toString().trim();
+      const classLevel = data[i][CONFIG.FORM_INDICES.CLASS].toString().trim();
+      const subject = data[i][CONFIG.FORM_INDICES.SUBJECT].toString().trim();
 
+      // Create a normalized unique key for the submission
+      const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, "");
+      submittedSet.add(subKey);
+
+      // Keep the Lateness check for what WAS submitted
+      const timestamp = parseGhanaianDate(timestampStr);
       const deadline = calculateFridayDeadline(weekString);
       const daysLate = calculateDaysLate(timestamp, deadline);
 
-      // LATE CHECK: Ensure we only flag late submissions for the CURRENT week!
       if (daysLate > 0) {
-        const entry = `⚠️ LATE: ${teacher} (${classLevel}): ${daysLate} day(s) late.`;
-        
+        const hodSelection = data[i][CONFIG.FORM_INDICES.HOD];
+        const entry = `⚠️ LATE: ${teacher} (${classLevel} - ${subject}): ${daysLate} day(s) late.`;
+
         if (hodSelection.includes(CONFIG.HOD_NAMES.LOWER)) {
           primaryReport.push(entry);
         } else if (hodSelection.includes(CONFIG.HOD_NAMES.UPPER)) {
@@ -108,22 +104,27 @@ function sendFridayLateReport() {
     }
   }
 
-  // 2. Ghost Tracker: Scan roster for MISSING (Fixed Column Mapping)
-  for (let i = 1; i < rosterData.length; i++) {
-    const rosterTeacher = rosterData[i][0]; // Col A: Teacher Name
-    const department = rosterData[i][1] ? rosterData[i][1].toString().toLowerCase() : ""; // Col B: Department
+  // 2. The New Ghost Tracker: Cross-reference with Teaching Load Matrix
+  const teachingLoad = getTeachingLoad(); // From SheetService.js
+  const staffRoster = getDynamicTeacherRoster(); // From SheetService.js
 
-    if (rosterTeacher && !submittedTeachers.includes(rosterTeacher)) {
-      const entry = `❌ MISSING: ${rosterTeacher} (No submission for ${extractWeekName(targetWeek)})`;
-      
-      // Route based on department string
-      if (department.includes("upper") || department.includes("secondary")) {
+  teachingLoad.forEach(load => {
+    // Generate the exact same normalized key pattern
+    const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, "");
+
+    // If the required load key is NOT in the submitted set, it's missing!
+    if (!submittedSet.has(loadKey)) {
+      const entry = `❌ MISSING: ${load.teacherName} - ${load.subjectName} (${load.className})`;
+
+      // Route to correct HOD using the Staff Roster department mapping
+      const teacherInfo = staffRoster[load.teacherName];
+      if (teacherInfo && teacherInfo.hodEmail === CONFIG.HOD_EMAILS.UPPER) {
         secondaryReport.push(entry);
       } else {
-        primaryReport.push(entry);
+        primaryReport.push(entry); // Default to Lower if unmapped
       }
     }
-  }
+  });
 
   // 3. Send Emails (CC'ing VP Theodora Hammond)
   if (primaryReport.length > 0) {

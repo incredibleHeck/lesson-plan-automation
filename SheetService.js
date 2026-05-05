@@ -160,3 +160,87 @@ function getPreviousLessonFileId(teacherName, className, subjectName, currentWee
   }
   return null;
 }
+
+/**
+ * Checks if this is a resubmission and retrieves previous feedback.
+ */
+function getResubmissionData(teacherName, className, subjectName, weekString) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const weekName = extractWeekName(weekString); // Relies on Utils.js
+  const sheet = ss.getSheetByName(weekName);
+
+  if (!sheet) return { isResubmission: false, previousAudit: null, revisionCount: 0 };
+
+  const data = sheet.getDataRange().getValues();
+  let revisionCount = 0;
+  let previousAudit = null;
+
+  // Loop forward to count total previous revisions and get the most recent audit
+  for (let i = 1; i < data.length; i++) {
+    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const rowClass = data[i][CONFIG.INDICES.CLASS];
+    const rowSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString() : "";
+
+    if (rowTeacher === teacherName && rowClass === className && rowSubject.includes(subjectName)) {
+      revisionCount++;
+      previousAudit = data[i][CONFIG.INDICES.AI_AUDIT];
+    }
+  }
+
+  return {
+    isResubmission: revisionCount > 0,
+    previousAudit: previousAudit,
+    revisionCount: revisionCount
+  };
+}
+
+/**
+ * Fetches the expected teaching load for all teachers.
+ * Returns an array of objects representing each expected deliverable.
+ */
+function getTeachingLoad() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const loadSheet = ss.getSheetByName("Teaching Load");
+
+  if (!loadSheet) {
+    Logger.log("Error: Could not find 'Teaching Load' tab.");
+    return [];
+  }
+
+  const data = loadSheet.getDataRange().getValues();
+  const load = [];
+
+  // Start loop at 1 to skip header row
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (row[0]) {
+      load.push({
+        teacherName: row[0].toString().trim(),
+        className: row[1] ? row[1].toString().trim() : "",
+        subjectName: row[2] ? row[2].toString().trim() : "",
+        expectedLessons: row[3] ? parseInt(row[3], 10) : 0
+      });
+    }
+  }
+  return load;
+}
+
+/**
+ * Looks up the expected lesson count for a specific teacher/class/subject combo.
+ */
+function getExpectedLessonCount(teacherName, className, subjectName) {
+  const load = getTeachingLoad();
+
+  // Normalize inputs for safe matching (remove spaces, make lowercase)
+  const normTeacher = teacherName.toLowerCase().replace(/\s+/g, "");
+  const normClass = className.toLowerCase().replace(/\s+/g, "");
+  const normSubject = subjectName.toLowerCase().replace(/\s+/g, "");
+
+  const match = load.find(function (entry) {
+    return entry.teacherName.toLowerCase().replace(/\s+/g, "") === normTeacher &&
+        entry.className.toLowerCase().replace(/\s+/g, "") === normClass &&
+        entry.subjectName.toLowerCase().replace(/\s+/g, "") === normSubject;
+  });
+
+  return match ? match.expectedLessons : 1; // Default to 1 if no matrix entry is found
+}
