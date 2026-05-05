@@ -11,10 +11,10 @@ End-to-end automation for St. Adelaide lesson plans: **form submit → Drive fil
 | `Utils.js` | Week parsing (`extractWeekName`), Friday deadline, lateness, Ghanaian date parsing |
 | `DriveService.js` | `CONFIG.MASTER_FOLDER_NAME`, move/rename, Word→PDF, file ID from URL |
 | `SheetService.js` | `logSubmissionToSheet` (weekly tabs), `updateApprovalStatus`, `getDynamicTeacherRoster`, `getPreviousLessonFileId`, `getResubmissionData`, `getTeachingLoad`, `getExpectedLessonCount` |
-| `FormService.js` | Sync form teacher dropdown from **Staff Roster** |
+| `FormService.js` | Automated form setup: `updateAllFormDropdowns` (syncs Teacher, Class, and Subject lists) |
 | `AiService.js` | `extractTextFromPdf` (Drive OCR), **`gemini-3.1-pro-preview`** audit: Cambridge rubric, continuity, resubmission context, **Lessons/WK** completeness, fixed output format (topic, objectives, lessons detected, strengths, flags, rating, status with **7.0 threshold** in prompt) |
 | `EmailService.js` | Teacher receipt, immediate late HOD alert, **`sendFridayLateReport`** (late rows + missing matrix rows vs **Teaching Load**) |
-| `TelegramService.js` | `sendAuditAlert` (resubmission header, partial-lesson warning from parsed audit), approval callbacks, `/defaulters`, `/status` |
+| `TelegramService.js` | `sendAuditAlert` (resubmission header, partial-lesson warning from parsed audit), approval callbacks, matrix-based `/defaulters` (granular tracking), `/status` |
 | `appsscript.json` | V8 runtime, timezone |
 
 ## AI model
@@ -28,14 +28,15 @@ End-to-end automation for St. Adelaide lesson plans: **form submit → Drive fil
 |-----|---------|
 | `Form responses 1` | Linked form responses (columns per `CONFIG.FORM_INDICES`); basis for Friday scan of *submissions* |
 | `Staff Roster` | Name, department, email → `getDynamicTeacherRoster()` and HOD email routing |
-| `Teaching Load` | Teacher, Class, Subject, Lessons/WK → expected deliverables and `getExpectedLessonCount()` |
+| `Teaching Load` | Teacher, Class, Subject (e.g., **"Computing"**), Lessons/WK → expected deliverables and `getExpectedLessonCount()` |
 | `Week N` | Appended rows with HOD check, days late, **AI Audit** text (used for resubmission history and BI) |
 
 ## Feature phases (logic overview)
 
 1. **Resubmission / re-audit:** Before audit, `getResubmissionData` scans the current week tab for prior rows with the same teacher/class/subject; prior **AI Audit** text is injected into the user prompt. Telegram titles show resubmission revision count.
 2. **Deliverables matrix:** Friday missing detection uses a `Set` of normalized `teacher_class_subject` keys from form rows for the target week, cross-checked against `getTeachingLoad()`; routing uses roster `hodEmail` vs `CONFIG.HOD_EMAILS.UPPER`.
-3. **Lesson count:** `getExpectedLessonCount` reads **Lessons/WK** for the row matching the submission; passed into `generateAiSummary` / `generateAudit`. Telegram parses `LESSONS DETECTED: x / y` in the sanitized audit and may prepend a partial-submission warning.
+3. **Lesson count & Granular Tracking:** `getExpectedLessonCount` reads **Lessons/WK** for the row matching the submission. The Telegram `/defaulters` command now groups missing deliverables by teacher using the matrix, providing a single nudge button.
+4. **Form Automation & Combined Cohorts:** `FormService.js` implements a **Combined Cohort Strategy** (e.g., "Year 1 (A & B)") for teachers sharing streams, ensuring form choices always match matrix keys. Standardized subjects (e.g., **"Computing"**) are enforced.
 
 ## Secrets (Script Properties)
 

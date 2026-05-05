@@ -12,8 +12,8 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 - **Leadership oversight (Telegram):** Audit summaries go to the VP and relevant HOD with inline **Approve** / **Request Revision** actions (human-in-the-loop).
 - **Lateness and Friday reports:** Lateness uses the Friday-before-week-start deadline (`CONFIG.DEADLINE`). The Friday report lists late submissions (by HOD routing) and **missing** matrix deliverables (using **Staff Roster** for Upper vs Lower routing).
 - **Teacher nudges:** Slash commands and callbacks help leadership nudge missing teachers and update sheet status.
-- **Roster and form sync:** **`FormService.js`** can sync the form teacher list from **Staff Roster**.
-- **Self-healing permissions:** Drive and spreadsheet access patterns for the automation account remain documented in the conductor notes.
+- **Roster and form sync:** **`FormService.js`** automates the population of **Class**, **Subject**, and **Teacher** dropdowns. It implements a **Combined Cohort Strategy** (e.g., "Year 1 (A & B)") to handle multi-stream teaching with single submissions, ensuring form options perfectly match the **Teaching Load** matrix.
+- **Terminology standardization:** The system uses standardized subject names (e.g., **"Computing"** instead of the legacy "ICT") to ensure clean reporting and matrix matching.
 
 ## Tech stack
 
@@ -28,12 +28,12 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 | File | Description |
 |------|-------------|
 | `Main.js` | `onFormSubmit` orchestration, `doPost` webhook entry, `createTriggers` |
-| `AiService.js` | PDF OCR via Drive, Gemini audit prompts and API call |
+| `AiService.js` | PDF OCR via Drive, Gemini audit prompts and API call; enforces **7.0/10 automated threshold** |
 | `DriveService.js` | Master folder, move/rename, Word→PDF |
-| `TelegramService.js` | Audit alerts, partial-count warning, approval callbacks, slash commands |
+| `TelegramService.js` | Audit alerts, partial-count warning, approval callbacks, matrix-based `/defaulters` (granular tracking) |
 | `SheetService.js` | Weekly tabs, logging, roster, previous-week file lookup, resubmission data, teaching load, expected lesson count |
 | `EmailService.js` | Receipts, immediate late alerts, Friday late/missing report |
-| `FormService.js` | Roster → form dropdown sync |
+| `FormService.js` | Automated form setup: Roster → dropdown sync, Class/Subject standardization |
 | `Config.js` | `CONFIG`, indices, headers, Script Properties |
 | `Utils.js` | Ghanaian date parsing, deadlines, week helpers |
 

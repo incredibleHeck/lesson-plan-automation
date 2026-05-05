@@ -109,6 +109,9 @@ function sendFridayLateReport() {
   const staffRoster = getDynamicTeacherRoster(); // From SheetService.js
 
   teachingLoad.forEach(load => {
+    // Skip empty/placeholder rows in the teaching load matrix
+    if (!load.className || !load.subjectName) return;
+
     // Generate the exact same normalized key pattern
     const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, "");
 

@@ -58,9 +58,9 @@ Leadership can present a **live Academic Performance Dashboard** connected to th
 | Area | Outcome |
 |------|--------|
 | Compliance | Fewer undetected missing class/subject submissions; clearer weekly “what’s owed” picture |
-| Quality | Consistent structured feedback and scoring across subjects and weeks |
+| Quality | Consistent structured feedback and scoring across subjects and weeks; enforced 7.0/10 automated threshold |
 | Punctuality | Time-based patterns visible by week; supports accountability without argument |
-| Leadership time | Less manual spreadsheet reconciliation; fewer ad-hoc email threads |
+| Leadership time | Less manual spreadsheet reconciliation; automated form setup and matrix management |
 | Governance | A defensible story for parents, inspectors, and partners: “We measure and monitor instructional planning systematically.” |
 
 *Specific percentage targets should be set after one full term of baseline data.*
@@ -74,7 +74,7 @@ A realistic annual package typically covers:
 - **Platform and API usage** (document intelligence / model access at operational volume)
 - **Integration maintenance** (form, sheet, Drive, Telegram, reporting)
 - **Security and continuity** (controlled keys, backups of configuration, controlled change management)
-- **Support window** (break/fix during term time, minor adjustments to rubric language or reporting)
+- **Support window** (break/fix during term time, minor adjustments to rubric language, **automated form setup**, or reporting)
 
 The board is not buying “AI hype.” It is buying **repeatable operations**: the same rules applied every week, to every submission, with evidence preserved in the sheet and visible in the dashboard.
 
@@ -94,8 +94,9 @@ Calculated fields such as extracting **RATING** and **LESSONS DETECTED** should 
 ## Implementation status (plain English)
 
 - **Phase 1 — Resubmission & re-audit:** Prior feedback is carried into the next audit; Telegram marks resubmissions.
-- **Phase 2 — Deliverables matrix:** Friday reporting asks “Did they submit what they **owe**?” using **Teaching Load** + **Staff Roster** routing.
+- **Phase 2 — Deliverables matrix:** Friday reporting and **Telegram Defaulters** ask “Did they submit what they **owe**?” using **Teaching Load** + **Staff Roster** routing.
 - **Phase 3 — Lessons/WK completeness:** Expected weekly lesson count drives the audit and Telegram partial-submission warnings.
+- **Phase 4 — Form Automation:** Automated setup for Class (**Combined Cohort Strategy**), Subject (**Computing** standardization), and Teacher dropdowns.
 
 ---
 

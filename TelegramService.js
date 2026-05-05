@@ -191,6 +191,9 @@ function handleSlashCommand(message) {
     let missingByTeacher = {}; // Group missing items by teacher for a cleaner UI
 
     teachingLoad.forEach(load => {
+      // Skip empty/placeholder rows in the teaching load matrix
+      if (!load.className || !load.subjectName) return;
+
       const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, '');
       
       if (!submittedSet.has(loadKey)) {
