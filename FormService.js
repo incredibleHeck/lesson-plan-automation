@@ -55,7 +55,7 @@ function updateAllFormDropdowns() {
     "Geography",
     "History",
     "Humanities",
-    "Information and Communication Technology (ICT)",
+    "Computing",
     "Literature in English",
     "Mathematics",
     "Music",

@@ -47,7 +47,7 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
 
 /**
  * Updates the approval status on the specific Week's sheet and gets the Audit text.
- * Supports partial matching for subject codes (e.g. "ICT" matches "Information and Communication Technology (ICT)")
+ * Supports partial matching for subject codes (e.g. "ICT" matches "Computing")
  */
 function updateApprovalStatus(teacherName, subjectCode, sheetName, status) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
