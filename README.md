@@ -5,15 +5,14 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 ## Features
 
 - **Automated filing and conversion:** Organizes submissions into a chronological folder structure on Google Drive. Converts Microsoft Word (`.docx`) files to PDF using a Google Doc bridge for stable formatting.
-- **AI academic audits (Gemini 3.1 Pro Preview):** Calls the **`gemini-3.1-pro-preview`** model via the Generative Language API. Audits use subject-aware Cambridge-style rubrics, **weekly lesson-count completeness** (from the matrix), **subject continuity** with the previous week’s plan when a prior file exists, and **resubmission / re-audit** context when the same teacher/class/subject row already exists for that week. The model outputs a fixed layout including **LESSONS DETECTED: found / expected**, a **RATING** out of 10, and **STATUS** with a school-wide threshold (**7.0+ suggested as APPROVED**, **6.9 or below as REVISION NEEDED**). HODs still make the final call in Telegram.
-- **Phase 2 — Deliverables matrix:** **`Teaching Load`** sheet (Teacher, Class, Subject, Lessons/WK) defines what each teacher must submit. The Friday email report compares form submissions to that matrix (normalized keys), so missing work is reported per **class/subject**, not only “did the teacher submit something.”
-- **Phase 3 — Lesson count awareness:** Expected lessons per week are passed into the audit; Telegram can show a **partial submission** banner when parsed counts fall short of expected.
-- **Resubmission lifecycle:** New submissions for the same teacher/class/subject on the same week tab carry prior AI feedback into the prompt; Telegram headers flag **RESUBMISSION** with a revision counter.
-- **Leadership oversight (Telegram):** Audit summaries go to the VP and relevant HOD with inline **Approve** / **Request Revision** actions (human-in-the-loop).
-- **Lateness and Friday reports:** Lateness uses the Friday-before-week-start deadline (`CONFIG.DEADLINE`). The Friday report lists late submissions (by HOD routing) and **missing** matrix deliverables (using **Staff Roster** for Upper vs Lower routing).
-- **Teacher nudges:** Slash commands and callbacks help leadership nudge missing teachers and update sheet status.
-- **Roster and form sync:** **`FormService.js`** automates the population of **Class**, **Subject**, and **Teacher** dropdowns. It implements a **Combined Cohort Strategy** (e.g., "Year 1 (A & B)") to handle multi-stream teaching with single submissions, ensuring form options perfectly match the **Teaching Load** matrix.
-- **Terminology standardization:** The system uses standardized subject names (e.g., **"Computing"** instead of the legacy "ICT") to ensure clean reporting and matrix matching.
+- **AI academic audits (Gemini 3.1 Pro Preview):** Calls the **`gemini-3.1-pro-preview`** model with **3-attempt exponential backoff** (2s, 4s, 8s) for resilience. Audits use subject-aware Cambridge-style rubrics, **weekly lesson-count completeness**, **subject continuity**, and **resubmission / re-audit** context. The model outputs a fixed layout including **LESSONS DETECTED: found / expected**, a **RATING** out of 10, and **STATUS** (7.0 threshold).
+- **Autonomous Scheduling:** Reminders and reports use a **`Term Schedule`** tab to look up today's date and determine the target week perfectly, eliminating manual "week guessing."
+- **Self-Healing Recovery:** An hourly **Recovery Sweeper** (`retryFailedAudits`) scans for `PENDING API RETRY` or `GEMINI REJECTED` statuses and automatically re-processes them, ensuring 100% compliance tracking even during API outages.
+- **Granular Compliance Tracking:** The `/defaulters` command and morning reminders use a Map-based engine to parse AI audits. Defaulters are flagged as **❌ Missing** or **⚠️ Partial (X/Y done)**.
+- **Phase 2 — Deliverables matrix:** **`Teaching Load`** sheet defines what each teacher must submit. Friday reports compare submissions to that matrix using normalized keys.
+- **Leadership oversight (Telegram):** Audit summaries go to leadership with inline **Approve** / **Request Revision** actions.
+- **Lateness and Reports:** Automated receipts, immediate late alerts, and a Friday HOD report covering late/missing work.
+- **Roster and form sync:** **`FormService.js`** automates **Class**, **Subject**, and **Teacher** dropdowns, enforcing a **Combined Cohort Strategy** to match matrix keys.
 
 ## Tech stack
 
@@ -27,22 +26,22 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 
 | File | Description |
 |------|-------------|
-| `Main.js` | `onFormSubmit` orchestration, `doPost` webhook entry, `createTriggers` |
-| `AiService.js` | PDF OCR via Drive, Gemini audit prompts and API call; enforces **7.0/10 automated threshold** |
-| `DriveService.js` | Master folder, move/rename, Word→PDF |
-| `TelegramService.js` | Audit alerts, partial-count warning, approval callbacks, matrix-based `/defaulters` (granular tracking) |
-| `SheetService.js` | Weekly tabs, logging, roster, previous-week file lookup, resubmission data, teaching load, expected lesson count |
-| `EmailService.js` | Receipts, immediate late alerts, Friday late/missing report |
-| `FormService.js` | Automated form setup: Roster → dropdown sync, Class/Subject standardization |
-| `Config.js` | `CONFIG`, indices, headers, Script Properties |
-| `Utils.js` | Ghanaian date parsing, deadlines, week helpers |
+| `Main.js` | Orchestration, webhooks, `createTriggers`, and the **Recovery Sweeper**. |
+| `AiService.js` | Gemini API integration with **Exponential Backoff**. |
+| `SheetService.js` | Weekly tabs, roster, **Autonomous Schedule lookup**, and teaching load. |
+| `EmailService.js` | Receipts, late alerts, Friday report, and **Wed-Thu-Fri Morning Reminders**. |
+| `TelegramService.js` | Audit alerts, callbacks, and **Granular `/defaulters` Tracking**. |
+| `FormService.js` | Dropdown automation and standardization. |
+| `Config.js` | Centralized settings and Script Properties. |
+| `Utils.js` | Ghanaian date parsing and deadline math. |
 
 ## Spreadsheet model
 
-- **`Form responses 1`** — raw form responses (no AI column; used for triggers and Friday scanning).
-- **`Staff Roster`** — teacher name, department, email (HOD routing).
-- **`Teaching Load`** — expected deliverables and **Lessons/WK** per teacher/class/subject.
-- **`Week 1`, `Week 2`, …** — one tab per week with logged rows including **AI Audit**, **Days Late**, **HOD Check**.
+- **`Form responses 1`** — raw data source.
+- **`Staff Roster`** — teacher/dept/email mapping.
+- **`Teaching Load`** — matrix of expected deliverables and **Lessons/WK**.
+- **`Term Schedule`** — calendar master for autonomous week selection.
+- **`Week 1`, `Week 2`, …** — processed logs with AI audits.
 
 ## Setup
 
