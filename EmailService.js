@@ -211,16 +211,28 @@ function sendMorningReminders() {
     return; 
   }
 
-  // 2. Build the Set of what WAS submitted
-  const submittedSet = new Set();
+  // 2. Build a Map of what WAS submitted and count detected lessons
+  let submittedMap = new Map();
   for (let i = 1; i < data.length; i++) {
     const weekString = data[i][CONFIG.FORM_INDICES.WEEK_STARTING];
     if (weekString === targetWeek) {
       const teacher = data[i][CONFIG.FORM_INDICES.TEACHER_NAME].toString().trim();
       const classLevel = data[i][CONFIG.FORM_INDICES.CLASS].toString().trim();
       const subject = data[i][CONFIG.FORM_INDICES.SUBJECT].toString().trim();
+      const auditText = data[i][CONFIG.FORM_INDICES.AI_AUDIT] ? data[i][CONFIG.FORM_INDICES.AI_AUDIT].toString() : "";
+
       const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, "");
-      submittedSet.add(subKey);
+      
+      let foundLessons = 0;
+      const match = auditText.match(/LESSONS DETECTED:\s*(\d+)/i);
+      if (match) {
+        foundLessons = parseInt(match[1], 10);
+      } else if (auditText.length > 10) {
+        foundLessons = 1;
+      }
+
+      const currentFound = submittedMap.get(subKey) || 0;
+      submittedMap.set(subKey, Math.max(currentFound, foundLessons));
     }
   }
 
@@ -232,11 +244,19 @@ function sendMorningReminders() {
     if (!load.className || !load.subjectName) return;
     const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, "");
     
-    if (!submittedSet.has(loadKey)) {
+    const expectedLessons = load.expectedLessons || 1;
+    const foundLessons = submittedMap.has(loadKey) ? submittedMap.get(loadKey) : 0;
+
+    if (foundLessons < expectedLessons) {
       if (!missingByTeacher[load.teacherName]) {
         missingByTeacher[load.teacherName] = [];
       }
-      missingByTeacher[load.teacherName].push(`   ▪️ ${load.subjectName} (${load.className})`);
+      
+      if (foundLessons === 0) {
+        missingByTeacher[load.teacherName].push(`   ❌ ${load.subjectName} (${load.className})`);
+      } else {
+        missingByTeacher[load.teacherName].push(`   ⚠️ ${load.subjectName} (${load.className}) - Partial: ${foundLessons}/${expectedLessons} done`);
+      }
     }
   });
 

@@ -174,35 +174,54 @@ function handleSlashCommand(message) {
 
     const submissionData = weeklySheet.getDataRange().getValues();
     
-    // 1. Build a Set of exactly what WAS submitted on this weekly tab
-    let submittedSet = new Set();
+    // 1. Build a Map of what WAS submitted and count detected lessons
+    let submittedMap = new Map();
     for (let i = 1; i < submissionData.length; i++) {
       const teacher = submissionData[i][CONFIG.INDICES.TEACHER_NAME];
       const classLevel = submissionData[i][CONFIG.INDICES.CLASS];
       const subject = submissionData[i][CONFIG.INDICES.SUBJECT];
+      const auditText = submissionData[i][CONFIG.INDICES.AI_AUDIT] ? submissionData[i][CONFIG.INDICES.AI_AUDIT].toString() : "";
       
       if (teacher && classLevel && subject) {
-        // Normalize the key to match the matrix
         const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, '');
-        submittedSet.add(subKey);
+        
+        let foundLessons = 0;
+        const match = auditText.match(/LESSONS DETECTED:\s*(\d+)/i);
+        if (match) {
+          foundLessons = parseInt(match[1], 10);
+        } else if (auditText.length > 10) { 
+          foundLessons = 1; // Fallback if AI missed strict formatting but still audited
+        }
+
+        // If multiple submissions exist, keep the highest detected number
+        const currentFound = submittedMap.get(subKey) || 0;
+        submittedMap.set(subKey, Math.max(currentFound, foundLessons));
       }
     }
 
-    // 2. Cross-reference with the Teaching Load Matrix
-    const teachingLoad = getTeachingLoad(); // Fetched from SheetService.js
-    let missingByTeacher = {}; // Group missing items by teacher for a cleaner UI
+    // 2. Cross-reference with Teaching Load Matrix
+    const teachingLoad = getTeachingLoad(); 
+    let missingByTeacher = {}; 
 
     teachingLoad.forEach(load => {
       // Skip empty/placeholder rows in the teaching load matrix
       if (!load.className || !load.subjectName) return;
 
       const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, '');
-      
-      if (!submittedSet.has(loadKey)) {
+      const expectedLessons = load.expectedLessons || 1;
+      const foundLessons = submittedMap.has(loadKey) ? submittedMap.get(loadKey) : 0;
+
+      // Flag if missing entirely OR partially incomplete
+      if (foundLessons < expectedLessons) {
         if (!missingByTeacher[load.teacherName]) {
           missingByTeacher[load.teacherName] = [];
         }
-        missingByTeacher[load.teacherName].push(`${load.subjectName} (${load.className})`);
+        
+        if (foundLessons === 0) {
+          missingByTeacher[load.teacherName].push(`   ❌ ${load.subjectName} (${load.className})`);
+        } else {
+          missingByTeacher[load.teacherName].push(`   ⚠️ ${load.subjectName} (${load.className}) - Partial: ${foundLessons}/${expectedLessons} done`);
+        }
       }
     });
 
@@ -210,11 +229,11 @@ function handleSlashCommand(message) {
     let reportLines = [];
     
     Object.keys(missingByTeacher).forEach(teacher => {
-      // Format each missing item as a sub-bullet point on a new line
-      const missingItems = missingByTeacher[teacher].map(item => `   ▪️ ${item}`).join("\n");
+      // Join the items directly since they already have ❌ or ⚠️ emojis from Step 2
+      const missingItems = missingByTeacher[teacher].join("\n");
       
       // Build the text block for the teacher with the nested list
-      reportLines.push(`• <b>${teacher}</b>: Missing\n${missingItems}\n`);
+      reportLines.push(`• <b>${teacher}</b>: \n${missingItems}\n`);
     });
 
     // 4. Send the final report
