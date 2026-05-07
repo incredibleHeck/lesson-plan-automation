@@ -150,8 +150,37 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     "muteHttpExceptions": true 
   };
 
+  let response;
+  let maxRetries = 3;
+  let attempt = 0;
+  let success = false;
+
+  while (attempt < maxRetries && !success) {
+    try {
+      response = UrlFetchApp.fetch(apiUrl, options);
+      const responseCode = response.getResponseCode();
+      
+      // If we hit high demand or rate limits, trigger a retry
+      if (responseCode === 503 || responseCode === 429) {
+        throw new Error("High Demand / Rate Limit");
+      }
+      
+      success = true;
+    } catch (e) {
+      attempt++;
+      Logger.log(`Gemini API Error (Attempt ${attempt}/${maxRetries}): ${e.message}`);
+      
+      if (attempt >= maxRetries) {
+        // After 3 failed attempts, return a specific flag we can sweep later
+        return "⚠️ PENDING API RETRY: Gemini API is currently overloaded.";
+      }
+      
+      // Exponential backoff: Wait 2s, then 4s, then 8s before trying again
+      Utilities.sleep(Math.pow(2, attempt) * 1000); 
+    }
+  }
+
   try {
-    const response = UrlFetchApp.fetch(apiUrl, options);
     const responseCode = response.getResponseCode();
     const responseText = response.getContentText();
 

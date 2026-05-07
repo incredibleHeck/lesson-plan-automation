@@ -76,7 +76,7 @@ function onFormSubmit(e) {
   }
 
   // 8. Send Confirmation Receipt to Teacher
-  sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString);
+  sendTeacherReceipt(teacherName, subjectName, className, fullWeekString);
 }
 
 /**
@@ -127,31 +127,113 @@ function doPost(e) {
 }
 
 /**
- * INITIAL SETUP: Run once from the editor
+ * INITIAL SETUP: Run once from the editor to build all automated schedules
  */
 function createTriggers() {
   const ss = SpreadsheetApp.getActive();
   
-  // Clean up existing triggers to avoid duplicates
+  // 1. Clean up existing triggers to avoid duplicates
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(t => ScriptApp.deleteTrigger(t));
   
-  // Form Submit Trigger
+  // 2. CREATE Form Submit Trigger (Instant)
   ScriptApp.newTrigger('onFormSubmit')
       .forSpreadsheet(ss)
       .onFormSubmit()
       .create();
       
-  // Friday Report Trigger (Every Friday at 4 PM)
+  // 3. CREATE Friday Report Trigger (Every Friday at 4 PM)
   ScriptApp.newTrigger('sendFridayLateReport')
       .timeBased()
       .onWeekDay(ScriptApp.WeekDay.FRIDAY)
       .atHour(16)
       .create();
 
-  // Automatic Roster Sync (Runs whenever the sheet is edited)
+  // 4. CREATE Morning Reminders: Wednesday, Thursday, Friday at 8 AM
+  [ScriptApp.WeekDay.WEDNESDAY, ScriptApp.WeekDay.THURSDAY, ScriptApp.WeekDay.FRIDAY].forEach(day => {
+    ScriptApp.newTrigger('sendMorningReminders')
+        .timeBased()
+        .onWeekDay(day)
+        .atHour(8)
+        .create();
+  });
+
+  // 5. CREATE Recovery Sweeper Trigger (Every hour for API Failures)
+  ScriptApp.newTrigger('retryFailedAudits')
+      .timeBased()
+      .everyHours(1)
+      .create();
+
+  // 6. CREATE Automatic Roster Sync (Runs whenever the sheet is edited)
   ScriptApp.newTrigger('syncRosterToForm')
       .forSpreadsheet(ss)
       .onEdit()
       .create();
+      
+  Logger.log("✅ All triggers successfully created by the system!");
+}
+
+/**
+ * CRON JOB: Sweeps the weekly tabs for API failures and attempts to re-audit them.
+ */
+function retryFailedAudits() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  
+  sheets.forEach(sheet => {
+    const sheetName = sheet.getName();
+    // Only process sheets named "Week 1", "Week 2", etc.
+    if (!sheetName.startsWith("Week ")) return;
+
+    const data = sheet.getDataRange().getValues();
+    const AUDIT_COL = CONFIG.INDICES.AI_AUDIT; 
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const auditStatus = row[AUDIT_COL] ? row[AUDIT_COL].toString() : "";
+
+      // Target rows that failed due to API demand or errors
+      if (auditStatus.includes("GEMINI REJECTED") || 
+          auditStatus.includes("PENDING API RETRY") || 
+          auditStatus.includes("CRITICAL SCRIPT ERROR")) {
+        
+        Logger.log(`Found failed audit on sheet '${sheetName}', row ${i + 1}. Attempting retry...`);
+
+        const timestamp = row[CONFIG.INDICES.TIMESTAMP];
+        const weekRange = row[CONFIG.INDICES.WEEK_STARTING];
+        const hodName = row[CONFIG.INDICES.HOD];
+        const teacherName = row[CONFIG.INDICES.TEACHER_NAME];
+        const className = row[CONFIG.INDICES.CLASS];
+        const subjectName = row[CONFIG.INDICES.SUBJECT];
+        const fileLink = row[CONFIG.INDICES.UPLOAD_LINK];
+        const daysLate = row[CONFIG.INDICES.DAYS_LATE];
+        const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
+
+        // Extract fileId from the Drive link
+        const fileIdMatch = fileLink ? fileLink.match(/[-\w]{25,}/) : null;
+        const fileId = fileIdMatch ? fileIdMatch[0] : null;
+
+        if (fileId) {
+          // Re-calculate resubmission and continuity context
+          const resubmissionData = getResubmissionData(teacherName, className, subjectName, weekRange);
+          const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, weekRange);
+          const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
+
+          // Retry the AI Audit
+          const newAudit = generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons);
+          
+          // If successful (not a pending retry), update the sheet and alert Telegram
+          if (newAudit && !newAudit.includes("PENDING API RETRY")) {
+            sheet.getRange(i + 1, AUDIT_COL + 1).setValue(newAudit);
+            
+            try {
+              sendAuditAlert(teacherName, className, subjectName, newAudit, hodName, parseGhanaianDate(timestamp), latenessStatus, sheetName, resubmissionData.revisionCount);
+            } catch (err) {
+              Logger.log("Error sending Telegram alert during retry: " + err.message);
+            }
+          }
+        }
+      }
+    }
+  });
 }

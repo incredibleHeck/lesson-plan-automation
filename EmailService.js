@@ -3,18 +3,27 @@
  */
 
 /**
- * Sends a confirmation receipt to the submitting teacher
+ * Sends a confirmation receipt to the submitting teacher by checking the live roster.
  */
-function sendTeacherReceipt(teacherEmail, teacherName, subjectName, className, fullWeekString) {
-  if (teacherEmail) {
-    const weekName = extractWeekName(fullWeekString);
-    const body = `Hello ${teacherName},\n\nYour ${subjectName} lesson plan for ${className} has been successfully received and filed for ${fullWeekString}.\n\nThank you!`;
-    MailApp.sendEmail({
-      to: teacherEmail,
-      subject: `Success: Lesson Plan Received for ${weekName}`,
-      body: body
-    });
+function sendTeacherReceipt(teacherName, subjectName, className, fullWeekString) {
+  const roster = getDynamicTeacherRoster();
+  const teacherInfo = roster[teacherName];
+
+  if (!teacherInfo || !teacherInfo.email) {
+    Logger.log(`⚠️ Skipping receipt: No email found in Staff Roster for ${teacherName}`);
+    return;
   }
+
+  const weekName = extractWeekName(fullWeekString);
+  const body = `Hello ${teacherName},\n\nYour ${subjectName} lesson plan for ${className} has been successfully received and filed for ${fullWeekString}.\n\nThank you!`;
+  
+  MailApp.sendEmail({
+    to: teacherInfo.email,
+    subject: `Success: Lesson Plan Received for ${weekName}`,
+    body: body,
+    name: "St. Adelaide Academic Office",
+    replyTo: CONFIG.HOD_EMAILS.VP
+  });
 }
 
 /**
@@ -37,33 +46,18 @@ function sendLateAlert(email, teacher, subject, submittedAt, deadline, daysLate)
 function sendFridayLateReport() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // 1. Get the Submission Data
+  // 1. Determine target week autonomously from the Term Schedule
+  const targetWeek = getTargetWeekFromSchedule();
+
+  if (!targetWeek) {
+    Logger.log("Error: Could not determine target week for Friday report from Term Schedule.");
+    return;
+  }
+
+  // 2. Get the Submission Data
   const rawSheet = ss.getSheetByName("Form responses 1"); 
   if (!rawSheet) return;
   const data = rawSheet.getDataRange().getValues();
-
-  // Fix: Calculate targetWeek by finding the most common week in the last 15 submissions
-  // rather than just blindly trusting the absolute last row.
-  const recentRows = data.slice(-15);
-  const weekCounts = {};
-  let targetWeek = "";
-  let maxCount = 0;
-
-  recentRows.forEach(row => {
-    const week = row[CONFIG.FORM_INDICES.WEEK_STARTING];
-    if (week) {
-      weekCounts[week] = (weekCounts[week] || 0) + 1;
-      if (weekCounts[week] > maxCount) {
-        maxCount = weekCounts[week];
-        targetWeek = week;
-      }
-    }
-  });
-
-  if (!targetWeek) {
-    Logger.log("Error: Could not determine target week for Friday report.");
-    return;
-  }
 
   let primaryReport = [];
   let secondaryReport = [];
@@ -150,37 +144,121 @@ function sendFridayLateReport() {
 }
 
 /**
- * Sends a nudge email to a teacher regarding a missing lesson plan.
+ * Sends a nudge email to a teacher and copies their specific HOD automatically.
  */
-function sendNudgeEmail(teacherEmail, teacherName, weekName, hodEmail) {
-  const subject = `URGENT: Lesson Plan Submission for ${weekName}`;
-  const body = `Dear ${teacherName},\n\nThis is a courtesy reminder from the St. Adelaide Ops Bot. Our records indicate that your lesson plan for ${weekName} has not been received yet.\n\nPlease submit it at your earliest convenience to avoid further delays.\n\nThank you.`;
+function sendNudgeEmail(teacherName, weekName) {
+  const roster = getDynamicTeacherRoster();
+  const teacherInfo = roster[teacherName];
+
+  if (!teacherInfo || !teacherInfo.email) {
+    Logger.log(`⚠️ Cannot send nudge: No email found for ${teacherName}`);
+    return;
+  }
+
+  const subject = `Pending: Lesson Plan Submission - ${weekName}`;
+  const body = `Dear ${teacherName},\n\nThis is an automated notification from the Academic Office.\n\nOur records indicate that your lesson plan for ${weekName} has not been received yet. Please submit it at your earliest convenience to ensure pedagogical continuity.\n\nThank you,\nSt. Adelaide Ops Bot`;
   
   MailApp.sendEmail({
-    to: teacherEmail,
-    cc: hodEmail, // Copy the HOD on the nudge
+    to: teacherInfo.email,
+    cc: teacherInfo.hodEmail, // Automatically routes to their specific Dept Head
     subject: subject,
-    body: body
+    body: body,
+    name: "St. Adelaide Academic Office",
+    replyTo: teacherInfo.hodEmail // Forces replies to go directly to the teacher's specific HOD
   });
 }
 
 /**
  * Sends a revision request email to the teacher.
  */
-function sendRevisionEmail(teacherEmail, teacherName, weekName, auditResult) {
-  if (!teacherEmail) return;
+function sendRevisionEmail(teacherName, weekName, auditResult) {
+  const roster = getDynamicTeacherRoster();
+  const teacherInfo = roster[teacherName];
 
-  const subject = `ACTION REQUIRED: Lesson Plan Revision (${weekName})`;
-  const body = `Dear ${teacherName},\n\n` +
-               `Your HOD has reviewed your lesson plan for ${weekName} and requested a revision.\n\n` +
-               `AI AUDIT SUMMARY:\n${auditResult}\n\n` +
-               `Please update your lesson plan on Google Drive and inform your HOD once the changes are made.\n\n` +
-               `Thank you,\nSt. Adelaide Academic Office`;
+  if (!teacherInfo || !teacherInfo.email) {
+    Logger.log(`⚠️ Cannot send revision request: No email found for ${teacherName}`);
+    return;
+  }
+
+  const subject = `Update Requested: Lesson Plan - ${weekName}`;
+  const body = `Dear ${teacherName},\n\nYour Head of Department has reviewed your lesson plan for ${weekName} and requested a brief revision.\n\nAI Audit Summary:\n${auditResult}\n\nPlease update your document on Google Drive and notify your HOD once complete.\n\nThank you,\nSt. Adelaide Academic Office`;
   
   MailApp.sendEmail({
-    to: teacherEmail,
+    to: teacherInfo.email,
     cc: CONFIG.HOD_EMAILS.VP, // Oversight for the VP
     subject: subject,
-    body: body
+    body: body,
+    name: "St. Adelaide Academic Office",
+    replyTo: teacherInfo.hodEmail // Forces replies to go directly to the teacher's specific HOD
+  });
+}
+
+/**
+ * CRON JOB: Automatically emails teachers who have missing deliverables for the active week.
+ */
+function sendMorningReminders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const rawSheet = ss.getSheetByName("Form responses 1"); 
+  if (!rawSheet) return;
+  
+  const data = rawSheet.getDataRange().getValues();
+  
+  // 1. Determine target week autonomously from the Term Schedule
+  const targetWeek = getTargetWeekFromSchedule();
+  
+  if (!targetWeek || !targetWeek.toLowerCase().includes("week")) {
+    Logger.log("Cron Job Aborted: Could not resolve a valid Target Week from the Term Schedule.");
+    return; 
+  }
+
+  // 2. Build the Set of what WAS submitted
+  const submittedSet = new Set();
+  for (let i = 1; i < data.length; i++) {
+    const weekString = data[i][CONFIG.FORM_INDICES.WEEK_STARTING];
+    if (weekString === targetWeek) {
+      const teacher = data[i][CONFIG.FORM_INDICES.TEACHER_NAME].toString().trim();
+      const classLevel = data[i][CONFIG.FORM_INDICES.CLASS].toString().trim();
+      const subject = data[i][CONFIG.FORM_INDICES.SUBJECT].toString().trim();
+      const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, "");
+      submittedSet.add(subKey);
+    }
+  }
+
+  // 3. Cross-reference with the Teaching Load Matrix to group missing items
+  const teachingLoad = getTeachingLoad();
+  let missingByTeacher = {};
+
+  teachingLoad.forEach(load => {
+    if (!load.className || !load.subjectName) return;
+    const loadKey = `${load.teacherName}_${load.className}_${load.subjectName}`.toLowerCase().replace(/\s+/g, "");
+    
+    if (!submittedSet.has(loadKey)) {
+      if (!missingByTeacher[load.teacherName]) {
+        missingByTeacher[load.teacherName] = [];
+      }
+      missingByTeacher[load.teacherName].push(`   ▪️ ${load.subjectName} (${load.className})`);
+    }
+  });
+
+  // 4. Send the personalized email to each defaulter
+  const roster = getDynamicTeacherRoster();
+
+  Object.keys(missingByTeacher).forEach(teacher => {
+    const teacherInfo = roster[teacher];
+    if (teacherInfo && teacherInfo.email) {
+      const missingItemsList = missingByTeacher[teacher].join("\n");
+      
+      const subject = `Action Required: Missing Lesson Plans - ${targetWeek}`;
+      const body = `Dear ${teacher},\n\nThis is an automated morning reminder from the Academic Office.\n\nOur records show that you have not yet submitted the following expected lesson plans for ${targetWeek}:\n\n${missingItemsList}\n\nPlease submit these deliverables to the HeckTeck portal at your earliest convenience to ensure pedagogical continuity.\n\nThank you,\nSt. Adelaide Ops Bot`;
+      
+      MailApp.sendEmail({
+        to: teacherInfo.email,
+        cc: teacherInfo.hodEmail, // Keep the HOD in the loop automatically
+        subject: subject,
+        body: body,
+        name: "St. Adelaide Academic Office",
+        replyTo: teacherInfo.hodEmail
+      });
+    }
   });
 }

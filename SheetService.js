@@ -244,3 +244,39 @@ function getExpectedLessonCount(teacherName, className, subjectName) {
 
   return match ? match.expectedLessons : 1; // Default to 1 if no matrix entry is found
 }
+
+/**
+ * Determines the target submission week by checking today's date against the Term Schedule.
+ */
+function getTargetWeekFromSchedule() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const scheduleSheet = ss.getSheetByName("Term Schedule");
+  
+  if (!scheduleSheet) {
+    Logger.log("⚠️ Error: 'Term Schedule' tab not found.");
+    return null;
+  }
+
+  const data = scheduleSheet.getDataRange().getValues();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Normalize today to midnight for safe comparison
+
+  // Loop through the schedule (skip header)
+  for (let i = 1; i < data.length; i++) {
+    const startDate = new Date(data[i][1]);
+    const endDate = new Date(data[i][2]);
+    
+    // Normalize schedule dates to midnight
+    startDate.setHours(0,0,0,0);
+    endDate.setHours(23,59,59,999); 
+
+    // If today falls within this week's boundaries
+    if (today >= startDate && today <= endDate) {
+      const targetWeek = data[i][3]; // Column D: Target Submission Week
+      return targetWeek ? targetWeek.toString().trim() : null;
+    }
+  }
+  
+  Logger.log("⚠️ Notice: Today's date does not fall within any week on the Term Schedule.");
+  return null;
+}

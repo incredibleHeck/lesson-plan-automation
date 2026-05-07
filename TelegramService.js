@@ -154,10 +154,12 @@ function handleSlashCommand(message) {
     if (parts.length > 1) {
       targetWeek = parts.slice(1).join(" ");
     } else {
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      const rawSheet = ss.getSheetByName("Form responses 1");
-      const lastRowData = rawSheet.getRange(rawSheet.getLastRow(), CONFIG.FORM_INDICES.WEEK_STARTING + 1).getValue();
-      targetWeek = extractWeekName(lastRowData);
+      // Autonomously determine the target week from the calendar tab
+      targetWeek = getTargetWeekFromSchedule();
+      if (!targetWeek) {
+        sendTelegramMessage(chatId, `⚠️ <b>Error:</b> Could not determine the current week from the Term Schedule. Please specify manually (e.g., /defaulters Week 4).`);
+        return;
+      }
     }
 
     sendTelegramMessage(chatId, `⏳ Scanning ${targetWeek} for defaulters...`);
@@ -204,28 +206,22 @@ function handleSlashCommand(message) {
       }
     });
 
-    // 3. Build the Telegram UI Payload
-    let missingRows = [];
+    // 3. Build the Telegram UI Payload (No Buttons)
     let reportLines = [];
     
     Object.keys(missingByTeacher).forEach(teacher => {
-      const missingItems = missingByTeacher[teacher].join(", ");
-      reportLines.push(`• <b>${teacher}</b>: Missing ${missingItems}`);
+      // Format each missing item as a sub-bullet point on a new line
+      const missingItems = missingByTeacher[teacher].map(item => `   ▪️ ${item}`).join("\n");
       
-      // Add a single Nudge button for the teacher
-      missingRows.push([
-        { "text": `📲 Nudge ${teacher}`, "callback_data": `NUDGE_${teacher}` }
-      ]);
+      // Build the text block for the teacher with the nested list
+      reportLines.push(`• <b>${teacher}</b>: Missing\n${missingItems}\n`);
     });
 
     // 4. Send the final report
-    if (missingRows.length > 0) {
-      // CRITICAL: We MUST inject the reportLines array here to show the grouped classes.
-      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\n\n` + 
-                     `${reportLines.join("\n")}\n\n` + 
-                     `Tap to send an urgent reminder:`;
-                     
-      sendTelegramMessage(chatId, report, { "inline_keyboard": missingRows });
+    if (reportLines.length > 0) {
+      // Send just the text report, no inline keyboard
+      const report = `<b>📊 Defaulters Report (${targetWeek}):</b>\n\n${reportLines.join("\n")}`;
+      sendTelegramMessage(chatId, report);
     } else {
       sendTelegramMessage(chatId, `<b>✅ 100% Compliance:</b> All rostered teachers have submitted their complete teaching load for ${targetWeek}!`);
     }
@@ -285,8 +281,8 @@ function handleCallbackQuery(callbackQuery) {
     const rowData = updateApprovalStatus(teacher, shortSubj, targetSheetName, fullStatus);
     
     if (rowData) {
-      if (action === "REV" && rowData.email) {
-        sendRevisionEmail(rowData.email, teacher, targetSheetName, rowData.audit);
+      if (action === "REV") {
+        sendRevisionEmail(teacher, targetSheetName, rowData.audit);
         responseText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified for ${targetSheetName}.`;
       } else {
         responseText = `✅ <b>Status Updated:</b> ${teacher}'s ${shortSubj} plan is now ${fullStatus} on the ${targetSheetName} tab.`;
@@ -296,15 +292,8 @@ function handleCallbackQuery(callbackQuery) {
     }
   } else if (action === "NUDGE") {
     const teacher = parts[1];
-    const liveRoster = getDynamicTeacherRoster();
-    const teacherInfo = liveRoster[teacher];
-    
-    if (teacherInfo && teacherInfo.email) {
-      sendNudgeEmail(teacherInfo.email, teacher, "the current week", teacherInfo.hodEmail);
-      responseText = `✉️ <b>Nudge Sent:</b> An urgent reminder was emailed to ${teacher}, copying their HOD.`;
-    } else {
-      responseText = `⚠️ <b>Error:</b> Could not find an email address for ${teacher} in the Staff Roster.`;
-    }
+    sendNudgeEmail(teacher, "the current week");
+    responseText = `✉️ <b>Nudge Sent:</b> An urgent reminder was emailed to ${teacher}, copying their HOD.`;
   }
 
   sendTelegramMessage(chatId, responseText);
