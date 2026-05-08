@@ -102,8 +102,8 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
 
 /**
  * Extracts text from one or multiple file links.
- * Google Docs: body text, then Drive plain-text export if body is empty.
- * Word / PDF: Drive.Files.create(blob) with Google Doc MIME (Drive API v3 conversion) + polling.
+ * Native Google Docs: DocumentApp body, then plain-text export fallback.
+ * Word/PDF: Drive.Files.create converts to Google Doc; text read via repeated Drive export (avoids DocumentApp "ghost" empty bodies).
  */
 function extractTextFromFiles(rawLinkString) {
   if (!rawLinkString) return null;
@@ -124,23 +124,45 @@ function extractTextFromFiles(rawLinkString) {
     }
   }
 
+  /**
+   * Poll converted Google Doc by exporting plain text (more reliable than DocumentApp right after upload).
+   */
   function pollForText(docId) {
     let extracted = "";
     let attempts = 0;
-    while (attempts < 8) {
-      Utilities.sleep(5000);
+
+    Utilities.sleep(3000);
+
+    while (attempts < 5) {
       try {
-        extracted = DocumentApp.openById(docId).getBody().getText();
+        extracted = exportGoogleDocPlainText_(docId);
         if (extracted && extracted.trim().length > 0) break;
-      } catch (e) { /* conversion still opening */ }
+      } catch (e) {
+        Logger.log("Polling attempt " + (attempts + 1) + " failed: " + e.message);
+      }
+      Utilities.sleep(4000);
       attempts++;
     }
     return extracted;
   }
 
   function exportGoogleDocPlainText_(id) {
-    const exported = Drive.Files.export(id, MimeType.PLAIN_TEXT);
-    return typeof exported === "string" ? exported : exported.getDataAsString();
+    const url =
+      "https://www.googleapis.com/drive/v3/files/" +
+      encodeURIComponent(id) +
+      "/export?mimeType=text%2Fplain";
+    const options = {
+      method: "get",
+      headers: {
+        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
+      },
+      muteHttpExceptions: true,
+    };
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() !== 200) {
+      throw new Error("Direct export failed: " + response.getContentText());
+    }
+    return response.getContentText();
   }
 
   let combinedText = "";
