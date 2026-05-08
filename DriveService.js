@@ -73,8 +73,8 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
       }
       else if (mimeType === MimeType.MICROSOFT_WORD || mimeType === MimeType.MICROSOFT_WORD_LEGACY) {
         const resource = { name: "Temp_Conversion_" + newBaseName, mimeType: MimeType.GOOGLE_DOCS };
-        // CRITICAL FIX: Memory Safe conversion
-        tempDocFile = Drive.Files.copy(resource, fileId);
+        // Drive API v3: copy no longer converts Word → use create(blob) to force Google Doc conversion
+        tempDocFile = Drive.Files.create(resource, originalFile.getBlob());
 
         const pdfBlob = DriveApp.getFileById(tempDocFile.id).getAs(MimeType.PDF);
         pdfBlob.setName(`${newBaseName}.pdf`);
@@ -102,13 +102,46 @@ function processDriveFile(fileUrl, weekName, className, subjectName, teacherName
 
 /**
  * Extracts text from one or multiple file links.
- * Uses a HYBRID approach: Copy for Word Docs, Blob+OCR for PDFs/Images.
+ * Google Docs: body text, then Drive plain-text export if body is empty.
+ * Word / PDF: Drive.Files.create(blob) with Google Doc MIME (Drive API v3 conversion) + polling.
  */
 function extractTextFromFiles(rawLinkString) {
   if (!rawLinkString) return null;
 
   const matches = rawLinkString.match(/[-\w]{25,}/g);
   if (!matches || matches.length === 0) return null;
+
+  function driveApiWithRetry(thunk) {
+    let apiAttempt = 0;
+    while (apiAttempt < 3) {
+      try {
+        return thunk();
+      } catch (apiErr) {
+        apiAttempt++;
+        if (apiAttempt >= 3) throw apiErr;
+        Utilities.sleep(apiAttempt * 3000);
+      }
+    }
+  }
+
+  function pollForText(docId) {
+    let extracted = "";
+    let attempts = 0;
+    while (attempts < 8) {
+      Utilities.sleep(5000);
+      try {
+        extracted = DocumentApp.openById(docId).getBody().getText();
+        if (extracted && extracted.trim().length > 0) break;
+      } catch (e) { /* conversion still opening */ }
+      attempts++;
+    }
+    return extracted;
+  }
+
+  function exportGoogleDocPlainText_(id) {
+    const exported = Drive.Files.export(id, MimeType.PLAIN_TEXT);
+    return typeof exported === "string" ? exported : exported.getDataAsString();
+  }
 
   let combinedText = "";
   let errorLog = "";
@@ -118,86 +151,77 @@ function extractTextFromFiles(rawLinkString) {
     let tempDocFile = null;
 
     try {
-      // 🛡️ ANTI-RATE-LIMIT: Pause for 3 seconds before processing multiple files
       if (i > 0) Utilities.sleep(3000);
 
       let file;
       try {
         file = DriveApp.getFileById(fileId);
-      } catch(e) {
+      } catch (e) {
         throw new Error("Cannot access file (Check Drive sharing permissions)");
       }
 
       const mimeType = file.getMimeType();
+      const fileName = file.getName();
+      const isGoogleDoc = mimeType === MimeType.GOOGLE_DOCS;
+      const isWord =
+        mimeType === MimeType.MICROSOFT_WORD || mimeType === MimeType.MICROSOFT_WORD_LEGACY;
+      const isPDF = mimeType === MimeType.PDF;
 
-      // SCENARIO 1: ALREADY A GOOGLE DOC
-      if (mimeType === MimeType.GOOGLE_DOCS) {
-        combinedText += DocumentApp.openById(fileId).getBody().getText() + "\n\n";
+      if (!isGoogleDoc && !isWord && !isPDF) {
+        throw new Error(
+          `Unsupported file type (${mimeType}). Please submit a Google Doc, Word document, or PDF.`
+        );
+      }
+
+      if (isGoogleDoc) {
+        let text = DocumentApp.openById(fileId).getBody().getText();
+        if (!text || text.trim().length === 0) {
+          try {
+            text = exportGoogleDocPlainText_(fileId);
+          } catch (fallbackErr) {
+            Logger.log("Plain text export fallback failed: " + fallbackErr.message);
+          }
+        }
+        if (text && text.trim().length > 0) {
+          combinedText += text + "\n\n";
+        } else {
+          errorLog +=
+            `[File ${i + 1} (${fileName}): Google Doc body is completely empty. ` +
+            `Ensure text is not only in floating images/shapes] `;
+        }
         continue;
       }
 
       let text = "";
-      let resource = { name: "Temp_OCR_" + fileId, mimeType: MimeType.GOOGLE_DOCS };
+      const resource = { name: "Temp_Convert_" + fileId, mimeType: MimeType.GOOGLE_DOCS };
 
-      // 🛡️ API RETRY LOOP
-      let apiAttempt = 0;
-      let apiSuccess = false;
-
-      while (apiAttempt < 3 && !apiSuccess) {
-        try {
-          // SCENARIO 2: WORD DOC (Memory limit bypass)
-          if (mimeType === MimeType.MICROSOFT_WORD || mimeType === MimeType.MICROSOFT_WORD_LEGACY) {
-            tempDocFile = Drive.Files.copy(resource, fileId);
-          }
-          // SCENARIO 3: PDF OR IMAGE (Force OCR)
-          else {
-            const blob = file.getBlob();
-            resource.name = "Temp_OCR_" + file.getName();
-            tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
-          }
-          apiSuccess = true;
-        } catch (apiErr) {
-          apiAttempt++;
-          if (apiAttempt >= 3) throw apiErr;
-          Utilities.sleep(apiAttempt * 3000);
-        }
-      }
-
-      // ⏱️ WAIT FOR GOOGLE TO FINISH THE TEXT CONVERSION
-      let readAttempts = 0;
-      const maxReadAttempts = 6;
-
-      while (readAttempts < maxReadAttempts) {
-        Utilities.sleep(5000);
-        try {
-          const tempDoc = DocumentApp.openById(tempDocFile.id);
-          text = tempDoc.getBody().getText();
-          if (text && text.trim().length > 0) break;
-        } catch (e) { }
-        readAttempts++;
+      if (isWord || isPDF) {
+        const blob = file.getBlob();
+        tempDocFile = driveApiWithRetry(function () {
+          return Drive.Files.create(resource, blob);
+        });
+        text = pollForText(tempDocFile.id);
       }
 
       if (text && text.trim().length > 0) {
         combinedText += text + "\n\n";
-      } else {
-        if (mimeType.includes("image")) {
-           errorLog += `[File ${i+1} is an image but Google OCR couldn't read the handwriting/text] `;
-        } else {
-           errorLog += `[File ${i+1} converted but text remained empty] `;
-        }
+      } else if (!isGoogleDoc) {
+        errorLog +=
+          `[File ${i + 1} (${fileName}): Conversion completed but text remained empty. MIME: ${mimeType}] `;
       }
-
     } catch (err) {
-      errorLog += `[File ${i+1} Failed: ${err.message}] `;
+      errorLog += `[File ${i + 1} Failed: ${err.message}] `;
     } finally {
       if (tempDocFile && tempDocFile.id) {
-        try { DriveApp.getFileById(tempDocFile.id).setTrashed(true); } catch(e){}
+        try {
+          DriveApp.getFileById(tempDocFile.id).setTrashed(true);
+        } catch (e) { /* ignore */ }
       }
     }
   }
 
   if (combinedText.trim().length === 0) {
-    return "EXTRACTION ERROR: Google converted the files but found zero text. " + errorLog;
+    return "EXTRACTION ERROR: " + errorLog;
   }
   return combinedText;
 }
