@@ -31,37 +31,28 @@ function updateAllFormDropdowns() {
     }
   }
 
-  // 2. Data Source: Standardized Classes (Combined Cohort Strategy)
-  const classList = [
-    "Year 1A", "Year 1B", "Year 1 (A & B)",
-    "Year 2A", "Year 2B", "Year 2 (A & B)",
-    "Year 3A", "Year 3B", "Year 3 (A & B)",
-    "Year 4A", "Year 4B", "Year 4 (A & B)",
-    "Year 5A", "Year 5B", "Year 5 (A & B)",
-    "Year 6A", "Year 6B", "Year 6 (A & B)",
-    "Year 7", "Year 8", "Year 9", "Year 10", "Year 11", "Year 12"
-  ];
-
-  // 3. Data Source: Standardized Subjects
-  const subjectList = [
-    "Arts",
-    "Bible Knowledge",
-    "Biology",
-    "Business Studies",
-    "Chemistry",
-    "Economics",
-    "English Language",
-    "French",
-    "Geography",
-    "History",
-    "Humanities",
-    "Computing",
-    "Literature in English",
-    "Mathematics",
-    "Music",
-    "Physics",
-    "Science"
-  ];
+  // 2 & 3. Data Source: Dynamic Classes and Subjects from Teaching Load
+  const loadSheet = ss.getSheetByName("Teaching Load");
+  let classList = [];
+  let subjectList = [];
+  
+  if (loadSheet) {
+    const loadData = loadSheet.getDataRange().getValues();
+    const classSet = new Set();
+    const subjectSet = new Set();
+    
+    for (let i = 1; i < loadData.length; i++) {
+      const cls = loadData[i][1]; // Assuming Class is Column B (Index 1)
+      const subj = loadData[i][2]; // Assuming Subject is Column C (Index 2)
+      
+      if (cls && cls.toString().trim() !== "") classSet.add(cls.toString().trim());
+      if (subj && subj.toString().trim() !== "") subjectSet.add(subj.toString().trim());
+    }
+    
+    // Convert Sets to sorted arrays
+    classList = Array.from(classSet).sort();
+    subjectList = Array.from(subjectSet).sort();
+  }
 
   // 4. Update the Form Items
   items.forEach(item => {

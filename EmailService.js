@@ -50,7 +50,7 @@ function sendFridayLateReport() {
   const targetWeek = getTargetWeekFromSchedule();
 
   if (!targetWeek) {
-    Logger.log("Error: Could not determine target week for Friday report from Term Schedule.");
+    Logger.log("Friday Report Aborted: Could not resolve a valid Target Week from the Term Schedule.");
     return;
   }
 

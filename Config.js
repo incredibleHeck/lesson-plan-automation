@@ -9,14 +9,14 @@ const CONFIG = {
   
   // SECURED: Pulled from Script Properties to protect PII
   HOD_EMAILS: {
-    LOWER: scriptProps.getProperty("EMAIL_LOWER_HOD") || "alfredashia@stadelaideschools.com",
-    UPPER: scriptProps.getProperty("EMAIL_UPPER_HOD") || "abigailsackey@stadelaideschools.com",
-    VP: scriptProps.getProperty("EMAIL_VP") || "theodorahammond@stadelaideschools.com"
+    LOWER: scriptProps.getProperty("EMAIL_LOWER_HOD") || "lower_hod@example.com",
+    UPPER: scriptProps.getProperty("EMAIL_UPPER_HOD") || "upper_hod@example.com",
+    VP: scriptProps.getProperty("EMAIL_VP") || "vp@example.com"
   },
   
   HOD_NAMES: {
-    LOWER: scriptProps.getProperty("NAME_LOWER_HOD") || "Alfred Ashia",
-    UPPER: scriptProps.getProperty("NAME_UPPER_HOD") || "Abigail Sackey"
+    LOWER: scriptProps.getProperty("NAME_LOWER_HOD") || "Lower HOD",
+    UPPER: scriptProps.getProperty("NAME_UPPER_HOD") || "Upper HOD"
   },
 
   // 1. INDICES FOR INCOMING FORM SUBMISSION (e.values array)
@@ -65,6 +65,12 @@ const CONFIG = {
     BOT_TOKEN: scriptProps.getProperty("TELEGRAM_BOT_TOKEN"),
     CHAT_ID_VP: scriptProps.getProperty("CHAT_ID_VP"),
     CHAT_ID_LOWER_HOD: scriptProps.getProperty("CHAT_ID_LOWER_HOD"),
-    CHAT_ID_UPPER_HOD: scriptProps.getProperty("CHAT_ID_UPPER_HOD")
+    CHAT_ID_UPPER_HOD: scriptProps.getProperty("CHAT_ID_UPPER_HOD"),
+    // SECURED: Personal Telegram User IDs for button authorization
+    AUTHORIZED_USER_IDS: [
+      scriptProps.getProperty("TELEGRAM_VP_USER_ID") || "REPLACE_WITH_VP_USER_ID",
+      scriptProps.getProperty("TELEGRAM_LOWER_USER_ID") || "REPLACE_WITH_LOWER_USER_ID",
+      scriptProps.getProperty("TELEGRAM_UPPER_USER_ID") || "REPLACE_WITH_UPPER_USER_ID"
+    ]
   }
 };

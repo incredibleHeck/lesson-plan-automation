@@ -46,10 +46,23 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 ## Setup
 
 1. **Environment:** Use `clasp` to push/pull if you maintain the script from this repo.
-2. **Secrets (Script Properties):** `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `CHAT_ID_VP`, `CHAT_ID_LOWER_HOD`, `CHAT_ID_UPPER_HOD`, `WEBHOOK_SECRET`, plus email-related properties as set in `Config.js`.
+2. **Secrets (Script Properties):** Go to **Project Settings → Script Properties** and add the following keys:
+
+| Property Key | Description | Example / Source |
+|--------------|-------------|-----------------|
+| `GEMINI_API_KEY` | Google AI Studio API Key | `AIzaSy...` |
+| `TELEGRAM_BOT_TOKEN` | BotFather token | `123456:ABC-DEF...` |
+| `CHAT_ID_VP` | Telegram Chat ID for VP | `-100...` |
+| `CHAT_ID_LOWER_HOD` | Telegram Chat ID for Lower HOD | `-100...` |
+| `CHAT_ID_UPPER_HOD` | Telegram Chat ID for Upper HOD | `-100...` |
+| `WEBHOOK_SECRET` | Custom token for `?token=X` | Any long random string |
+| `EMAIL_VP` | VP's official email | `theodora@...` |
+| `EMAIL_LOWER_HOD` | Lower HOD email | `alfred@...` |
+| `EMAIL_UPPER_HOD` | Upper HOD email | `abigail@...` |
+
 3. **Advanced services:** Enable **Drive API v3** in the Apps Script editor.
 4. **Triggers:** Run `createTriggers()` once from the editor.
-5. **Data quality:** **Teaching Load** names should match form **Teacher / Class / Subject** text (normalization ignores case and spaces).
+5. **Data quality:** **Teaching Load** names should match form **Teacher / Class / Subject** text. The system uses **Normalization (lower-case, trimmed, and space-agnostic)** to ensure robust matching even with minor typos.
 
 ## Board / BI note
 

@@ -120,9 +120,10 @@ function sendAuditAlert(teacherName, className, subjectName, auditText, hodName,
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_VP, message, approvalKeyboard);
   }
   
-  if (hodName.includes(CONFIG.HOD_NAMES.LOWER) && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
+  const safeHodName = hodName ? hodName.toString() : "";
+  if (safeHodName.includes(CONFIG.HOD_NAMES.LOWER) && CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD, message, approvalKeyboard);
-  } else if (hodName.includes(CONFIG.HOD_NAMES.UPPER) && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
+  } else if (safeHodName.includes(CONFIG.HOD_NAMES.UPPER) && CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD) {
     sendTelegramMessage(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD, message, approvalKeyboard);
   }
 }
@@ -259,12 +260,8 @@ function handleCallbackQuery(callbackQuery) {
   const chatId = callbackQuery.message.chat.id;
   const clickerId = String(callbackQuery.from.id); // Who actually clicked the button?
 
-  // SECURITY: Ensure the person clicking is authorized leadership
-  const allowedIds = [
-    String(CONFIG.TELEGRAM.CHAT_ID_VP),
-    String(CONFIG.TELEGRAM.CHAT_ID_LOWER_HOD),
-    String(CONFIG.TELEGRAM.CHAT_ID_UPPER_HOD)
-  ];
+  // SECURITY: Ensure the person clicking is authorized leadership (Personal User IDs)
+  const allowedIds = CONFIG.TELEGRAM.AUTHORIZED_USER_IDS;
 
   if (!allowedIds.includes(clickerId)) {
     // Flash a warning on the unauthorized user's screen
@@ -300,6 +297,18 @@ function handleCallbackQuery(callbackQuery) {
     const rowData = updateApprovalStatus(teacher, shortSubj, targetSheetName, fullStatus);
     
     if (rowData) {
+      // Tell Telegram to remove the inline keyboard from the message
+      const removeButtonsUrl = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/editMessageReplyMarkup`;
+      UrlFetchApp.fetch(removeButtonsUrl, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({
+          chat_id: chatId,
+          message_id: callbackQuery.message.message_id,
+          reply_markup: { inline_keyboard: [] } 
+        })
+      });
+
       if (action === "REV") {
         sendRevisionEmail(teacher, targetSheetName, rowData.audit);
         responseText = `🚨 <b>Revision Requested:</b> ${teacher} has been notified for ${targetSheetName}.`;

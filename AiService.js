@@ -1,36 +1,28 @@
 /**
  * Services for Gemini AI interactions
- * NOTE: This service requires the "Drive API" Advanced Service (v3) to be enabled
- * in the Apps Script Editor (Services > + > Drive API).
+ * Clean Architecture: Delegates all file extraction to DriveService.js
  */
 
 /**
- * Orchestrates the extraction of text and calls the Gemini AI to generate an audit.
- * @param {string} fileId The ID of the current file to audit.
- * @param {string} className The class name for context (e.g., Year 1 Benjamin).
- * @param {string} subjectName The subject name for context.
- * @param {string} previousFileId The ID of the previous week's file (optional).
- * @param {{ isResubmission: boolean, previousAudit: *, revisionCount: number }} resubmissionData Prior-row context for re-audits (optional).
- * @param {number} expectedLessons Required lessons per week from Teaching Load (default 1).
- * @returns {string} The AI-generated summary and compliance check.
+ * Orchestrates the AI Audit generation process.
  */
-function generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons = 1) {
-  if (!fileId) return "AI Audit Skipped: No file provided.";
+function generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons = 1) {
+  if (!fileLink) return "AI Audit Skipped: No file provided.";
   if (!CONFIG.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY === "PASTE_YOUR_API_KEY_HERE") {
     return "AI Audit Skipped: No API Key provided.";
   }
 
   try {
-    // 1. Extract Text from Current File
-    const currentText = extractTextFromPdf(fileId);
+    // 1. Delegate Extraction to DriveService
+    const currentText = extractTextFromFiles(fileLink);
     if (!currentText) return "AI Audit Error: Could not extract text from current file.";
+    if (currentText.startsWith("EXTRACTION ERROR")) return "AI Audit Error: " + currentText;
 
-    // 2. Extract Text from Previous File (if provided)
-    const previousText = previousFileId ? extractTextFromPdf(previousFileId) : null;
+    // 2. Delegate Previous Text Extraction (skip bad reads so continuity isn't poisoned)
+    let previousText = previousFileId ? extractTextFromFiles(previousFileId) : null;
+    if (previousText && previousText.startsWith("EXTRACTION ERROR")) previousText = null;
 
     // 3. DYNAMIC CAMBRIDGE CRITERIA: Stack Core Pedagogy + Subject Focus
-    
-    // BASELINE: This applies to ALL subjects
     let subjectCriteria = `
     CORE PEDAGOGY & AGE-APPROPRIATENESS:
     - Context: "Year 1" is Grade 1 (approx ages 5-6), scaling up to Year 12. Expectations must strictly match the cognitive age band for ${className}.
@@ -38,23 +30,22 @@ function generateAiSummary(fileId, className, subjectName, previousFileId, resub
     - Explicitly flag passive learning (too much teacher-talk time) or vague success criteria when relevant.
     `;
 
-    // SUBJECT SPECIFIC: Add the extra layer based on what class it is
     const subjectLower = subjectName.toLowerCase();
-    
+
     if (subjectLower.includes("math")) {
       subjectCriteria += `
       MATHEMATICS FOCUS:
       - Look for the 'Thinking and Working Mathematically' (TWM) characteristics: Specialising, Generalising, Conjecturing, Convincing, Characterising, Classifying, Critiquing, or Improving.
       - Check if the lesson uses the three-step approach: concrete (objects), representational (pictures), and abstract (symbols/numbers).
       - Ensure there is a balance or clear focus on Number, Geometry and Measure, or Statistics and Probability.`;
-    } 
+    }
     else if (subjectLower.includes("science")) {
       subjectCriteria += `
       SCIENCE FOCUS:
       - Look for 'Thinking and Working Scientifically' skills: Models and representations, Scientific enquiry (planning, carrying out, analyzing), and Practical work.
       - Check for 'Science in Context': Does the lesson link the science to the real world or the learners' local environment?
       - Ensure practical experiments prioritize safety and active learning.`;
-    } 
+    }
     else if (subjectLower.includes("english") || subjectLower.includes("literacy")) {
       subjectCriteria += `
       ENGLISH FOCUS:
@@ -80,12 +71,11 @@ function generateAiSummary(fileId, className, subjectName, previousFileId, resub
 }
 
 /**
- * Core function to call Gemini 3.1 Pro Preview with strict formatting and context.
+ * Core function to call Gemini 3 Flash with strict formatting and context.
  */
 function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, subjectName, resubmissionData, expectedLessons = 1) {
-  // SECURED: API key moved to Header
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`;
-  
+
   const systemInstruction =
     "You are a Cambridge-certified academic auditor for St. Adelaide International Schools. " +
     `CRITICAL TASK: The teacher is expected to submit plans for ${expectedLessons} Lessons/WK for this subject. ` +
@@ -104,27 +94,22 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     "📊 RATING: [Float]/10\n" +
     "✅ STATUS: [If RATING is 7.0 or higher, output '✅ APPROVED'. If RATING is 6.9 or lower, output '🚨 REVISION NEEDED']";
 
-  // Apply a 15,000 character safety cap to prevent payload/token crashes
   const safeCurrentText = currentText ? currentText.substring(0, 15000) : "No text found.";
   let userPrompt = `Audit this ${subjectName} lesson plan for ${gradeLevel}.\n\nCURRENT LESSON PLAN TEXT:\n${safeCurrentText}`;
 
-  // Inject Resubmission Context (Re-Audit Logic)
   if (resubmissionData && resubmissionData.isResubmission && resubmissionData.previousAudit) {
     userPrompt += `\n\n⚠️ REVISION CONTEXT: This is a resubmitted lesson plan (Revision ${resubmissionData.revisionCount}). The previous draft was rejected/flagged with the following AI feedback:\n${resubmissionData.previousAudit}\n\nCRITICAL RE-AUDIT REQUIREMENT: Verify if the teacher actually fixed these specific flags. If they ignored the feedback, call it out aggressively in the FLAGS section.`;
   }
 
-  // Inject the previous week's context if it exists (capped at 3,000 chars)
   if (previousText) {
-    userPrompt = "CONTEXT: The teacher taught the following in the PREVIOUS week's lesson:\n" + 
-                 previousText.substring(0, 3000) + 
-                 "\n\n---\n\n" + userPrompt + 
+    userPrompt = "CONTEXT: The teacher taught the following in the PREVIOUS week's lesson:\n" +
+                 previousText.substring(0, 3000) +
+                 "\n\n---\n\n" + userPrompt +
                  "\n\nCRITICAL AUDIT REQUIREMENT: Evaluate if the current lesson accurately builds upon the previous lesson's context (Subject Continuity). If continuity is broken, mention it in the FLAGS section.";
   }
 
   const payload = {
-    "systemInstruction": {
-      "parts": [{"text": systemInstruction}]
-    },
+    "systemInstruction": { "parts": [{"text": systemInstruction}] },
     "contents": [
       {
         "parts": [
@@ -133,21 +118,15 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
         ]
       }
     ],
-    "generationConfig": {
-      "temperature": 0.2, 
-      "topK": 32,
-      "topP": 0.95
-    }
+    "generationConfig": { "temperature": 0.2, "topK": 32, "topP": 0.95 }
   };
 
   const options = {
     "method": "post",
     "contentType": "application/json",
-    "headers": {
-      "x-goog-api-key": CONFIG.GEMINI_API_KEY
-    },
+    "headers": { "x-goog-api-key": CONFIG.GEMINI_API_KEY },
     "payload": JSON.stringify(payload),
-    "muteHttpExceptions": true 
+    "muteHttpExceptions": true
   };
 
   let response;
@@ -159,105 +138,28 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     try {
       response = UrlFetchApp.fetch(apiUrl, options);
       const responseCode = response.getResponseCode();
-      
-      // If we hit high demand or rate limits, trigger a retry
-      if (responseCode === 503 || responseCode === 429) {
-        throw new Error("High Demand / Rate Limit");
-      }
-      
+      if (responseCode === 503 || responseCode === 429) throw new Error("High Demand / Rate Limit");
       success = true;
     } catch (e) {
       attempt++;
       Logger.log(`Gemini API Error (Attempt ${attempt}/${maxRetries}): ${e.message}`);
-      
-      if (attempt >= maxRetries) {
-        // After 3 failed attempts, return a specific flag we can sweep later
-        return "⚠️ PENDING API RETRY: Gemini API is currently overloaded.";
-      }
-      
-      // Exponential backoff: Wait 2s, then 4s, then 8s before trying again
-      Utilities.sleep(Math.pow(2, attempt) * 1000); 
+      if (attempt >= maxRetries) return "⚠️ PENDING API RETRY: Gemini API is currently overloaded.";
+      Utilities.sleep(Math.pow(2, attempt) * 1000);
     }
   }
 
   try {
     const responseCode = response.getResponseCode();
     const responseText = response.getContentText();
-
-    // SECURED: Safe JSON parsing
     let json;
-    try {
-      json = JSON.parse(responseText);
-    } catch (parseErr) {
-      Logger.log("Gemini API Error (Invalid JSON): " + responseText);
-      return "GEMINI REJECTED: Invalid JSON response from server.";
-    }
-
-    if (responseCode !== 200) {
-      Logger.log("Gemini API Error: " + responseText);
-      return "GEMINI REJECTED: " + (json.error ? json.error.message : "Unknown API Error"); 
-    }
-
+    try { json = JSON.parse(responseText); } catch (parseErr) { return "GEMINI REJECTED: Invalid JSON response from server."; }
+    if (responseCode !== 200) return "GEMINI REJECTED: " + (json.error ? json.error.message : "Unknown API Error");
     if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts) {
       return json.candidates[0].content.parts[0].text;
     } else {
       return "AI Audit Error: No response content.";
     }
-
   } catch (err) {
     return "CRITICAL SCRIPT ERROR: " + err.message;
-  }
-}
-
-/**
- * Extracts text from a PDF file using Drive OCR (Requires Advanced Drive Service enabled)
- * @param {string} fileId The ID of the file to extract text from.
- * @returns {string} The extracted text.
- */
-function extractTextFromPdf(fileId) {
-  if (!fileId) return null;
-  
-  let tempDocFile = null;
-  try {
-    const file = DriveApp.getFileById(fileId);
-    const blob = file.getBlob();
-    
-    const resource = {
-      title: "Temp_OCR_" + file.getName(), // Compatibility for Drive API v2
-      name: "Temp_OCR_" + file.getName(),  // Compatibility for Drive API v3
-      mimeType: MimeType.GOOGLE_DOCS // FORCE CONVERSION to Google Doc so DocumentApp can read it
-    };
-    
-    // Create the temporary Google Doc with OCR enabled
-    tempDocFile = Drive.Files.create(resource, blob, {ocr: true});
-    
-    let text = "";
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while (attempts < maxAttempts) {
-      Utilities.sleep(4000); 
-      try {
-        const tempDoc = DocumentApp.openById(tempDocFile.id);
-        text = tempDoc.getBody().getText();
-        if (text && text.trim().length > 0) break; 
-      } catch (e) {
-      }
-      attempts++;
-    }
-    
-    return text;
-    
-  } catch (err) {
-    Logger.log("OCR Error: " + err.message);
-    return null;
-  } finally {
-    if (tempDocFile && tempDocFile.id) {
-      try {
-        DriveApp.getFileById(tempDocFile.id).setTrashed(true);
-      } catch (cleanupErr) {
-        Logger.log("Failed to trash temp OCR file: " + cleanupErr.message);
-      }
-    }
   }
 }

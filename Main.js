@@ -60,13 +60,26 @@ function onFormSubmit(e) {
 
   const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
 
-  // 5. GENERATE AUDIT (NOW WITH CONTINUITY!)
-  const aiAuditText = generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons);
+  // 5. OPTIMISTIC SAVING: Log to Sheet first with a placeholder
+  logSubmissionToSheet(responses, weekName, daysLate, "🤖 Audit Pending...");
+  
+  // 6. Send Immediate Confirmation Receipt to Teacher
+  sendTeacherReceipt(teacherName, subjectName, className, fullWeekString);
 
-  // 6. Log to Sheet (Routing & Highlighting)
-  logSubmissionToSheet(responses, weekName, daysLate, aiAuditText);
+  // 7. GENERATE AUDIT (NOW WITH CONTINUITY!)
+  let aiAuditText;
+  try {
+    // We pass fileLink so the extractor has ALL the raw links
+    aiAuditText = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
+  } catch (err) {
+    Logger.log("Audit Generation Failure: " + err.message);
+    aiAuditText = "⚠️ AI Audit Failed: Please notify the system administrator.";
+  }
 
-  // 7. Blast the audit report to Telegram!
+  // 8. Update the sheet with the final audit
+  updateSheetWithAudit(teacherName, subjectName, weekName, aiAuditText);
+
+  // 9. Blast the audit report to Telegram!
   try {
     const weekMatch = fullWeekString.match(/Week \d+/i);
     const cleanWeek = weekMatch ? weekMatch[0] : fullWeekString;
@@ -74,9 +87,6 @@ function onFormSubmit(e) {
   } catch (err) {
     Logger.log("Error sending Telegram alert: " + err.message);
   }
-
-  // 8. Send Confirmation Receipt to Teacher
-  sendTeacherReceipt(teacherName, subjectName, className, fullWeekString);
 }
 
 /**
@@ -102,6 +112,17 @@ function doPost(e) {
     lock.waitLock(10000); 
   } catch (err) {
     Logger.log("Lock Timeout: Too many simultaneous webhook requests.");
+    
+    // UI FEEDBACK: Notify the Telegram user that the system is busy
+    try {
+      const update = JSON.parse(e.postData.contents);
+      const chatId = update.callback_query ? update.callback_query.message.chat.id : 
+                     (update.message ? update.message.chat.id : null);
+      if (chatId) {
+        sendTelegramMessage(chatId, "⚠️ <b>System Busy:</b> Too many simultaneous requests. Please wait 3 seconds and try again.");
+      }
+    } catch (uiErr) {}
+    
     return HtmlService.createHtmlOutput("OK"); 
   }
 
@@ -175,15 +196,28 @@ function createTriggers() {
 
 /**
  * CRON JOB: Sweeps the weekly tabs for API failures and attempts to re-audit them.
+ * Optimized: Only scans the current and previous week to save execution time/quota.
  */
 function retryFailedAudits() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = ss.getSheets();
   
-  sheets.forEach(sheet => {
+  // 1. Identify target weeks to scan (Current + Previous)
+  const currentWeek = getTargetWeekFromSchedule();
+  if (!currentWeek) return;
+
+  const currentWeekNum = parseInt(currentWeek.replace("Week ", ""), 10);
+  const sheetsToScan = [ss.getSheetByName(currentWeek)];
+  
+  if (currentWeekNum > 1) {
+    const previousWeek = "Week " + (currentWeekNum - 1);
+    const prevSheet = ss.getSheetByName(previousWeek);
+    if (prevSheet) sheetsToScan.push(prevSheet);
+  }
+
+  // 2. Scan identified sheets
+  sheetsToScan.forEach(sheet => {
+    if (!sheet) return;
     const sheetName = sheet.getName();
-    // Only process sheets named "Week 1", "Week 2", etc.
-    if (!sheetName.startsWith("Week ")) return;
 
     const data = sheet.getDataRange().getValues();
     const AUDIT_COL = CONFIG.INDICES.AI_AUDIT; 
@@ -195,7 +229,8 @@ function retryFailedAudits() {
       // Target rows that failed due to API demand or errors
       if (auditStatus.includes("GEMINI REJECTED") || 
           auditStatus.includes("PENDING API RETRY") || 
-          auditStatus.includes("CRITICAL SCRIPT ERROR")) {
+          auditStatus.includes("CRITICAL SCRIPT ERROR") ||
+          auditStatus.includes("AI Audit Error")) {
         
         Logger.log(`Found failed audit on sheet '${sheetName}', row ${i + 1}. Attempting retry...`);
 
@@ -209,19 +244,16 @@ function retryFailedAudits() {
         const daysLate = row[CONFIG.INDICES.DAYS_LATE];
         const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
 
-        // Extract fileId from the Drive link
-        const fileIdMatch = fileLink ? fileLink.match(/[-\w]{25,}/) : null;
-        const fileId = fileIdMatch ? fileIdMatch[0] : null;
-
-        if (fileId) {
+        // Pass the raw fileLink directly so it can process MULTIPLE comma-separated files!
+        if (fileLink) {
           // Re-calculate resubmission and continuity context
           const resubmissionData = getResubmissionData(teacherName, className, subjectName, weekRange);
           const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, weekRange);
           const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
 
-          // Retry the AI Audit
-          const newAudit = generateAiSummary(fileId, className, subjectName, previousFileId, resubmissionData, expectedLessons);
-          
+          // Retry the AI Audit (Now uses fileLink instead of fileId)
+          const newAudit = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
+
           // If successful (not a pending retry), update the sheet and alert Telegram
           if (newAudit && !newAudit.includes("PENDING API RETRY")) {
             sheet.getRange(i + 1, AUDIT_COL + 1).setValue(newAudit);

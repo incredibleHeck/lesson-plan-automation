@@ -62,10 +62,10 @@ function updateApprovalStatus(teacherName, subjectCode, sheetName, status) {
   
   // Loop backwards to find the teacher's MOST RECENT submission FOR THIS SUBJECT
   for (let i = data.length - 1; i >= 1; i--) {
-    const sheetTeacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const sheetTeacher = data[i][CONFIG.INDICES.TEACHER_NAME] ? data[i][CONFIG.INDICES.TEACHER_NAME].toString().trim().toLowerCase() : "";
     const sheetSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString().toUpperCase() : "";
 
-    if (sheetTeacher === teacherName && sheetSubject.includes(subjectCode.toUpperCase())) {
+    if (sheetTeacher === teacherName.toString().trim().toLowerCase() && sheetSubject.includes(subjectCode.toUpperCase())) {
       
       // Update the status column (i + 1 because Sheets are 1-indexed)
       targetSheet.getRange(i + 1, CONFIG.STATUS_COLUMN_NUMBER).setValue(status);
@@ -145,11 +145,11 @@ function getPreviousLessonFileId(teacherName, className, subjectName, currentWee
   // 2. Scan the previous week's sheet for a matching subject and teacher
   const data = prevSheet.getDataRange().getValues();
   for (let i = data.length - 1; i >= 1; i--) {
-    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME] ? data[i][CONFIG.INDICES.TEACHER_NAME].toString().trim().toLowerCase() : "";
     const rowClass = data[i][CONFIG.INDICES.CLASS];
     const rowSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString() : "";
 
-    if (rowTeacher === teacherName && 
+    if (rowTeacher === teacherName.toString().trim().toLowerCase() && 
         rowClass === className &&
         rowSubject.includes(subjectName)) {
       
@@ -177,11 +177,11 @@ function getResubmissionData(teacherName, className, subjectName, weekString) {
 
   // Loop forward to count total previous revisions and get the most recent audit
   for (let i = 1; i < data.length; i++) {
-    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME];
+    const rowTeacher = data[i][CONFIG.INDICES.TEACHER_NAME] ? data[i][CONFIG.INDICES.TEACHER_NAME].toString().trim().toLowerCase() : "";
     const rowClass = data[i][CONFIG.INDICES.CLASS];
     const rowSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString() : "";
 
-    if (rowTeacher === teacherName && rowClass === className && rowSubject.includes(subjectName)) {
+    if (rowTeacher === teacherName.toString().trim().toLowerCase() && rowClass === className && rowSubject.includes(subjectName)) {
       revisionCount++;
       previousAudit = data[i][CONFIG.INDICES.AI_AUDIT];
     }
@@ -279,4 +279,27 @@ function getTargetWeekFromSchedule() {
   
   Logger.log("⚠️ Notice: Today's date does not fall within any week on the Term Schedule.");
   return null;
+}
+
+/**
+ * Updates the AI Audit column for a specific row in a weekly tab.
+ */
+function updateSheetWithAudit(teacherName, subjectName, sheetName, auditText) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const targetSheet = ss.getSheetByName(sheetName);
+  if (!targetSheet) return;
+
+  const data = targetSheet.getDataRange().getValues();
+  
+  // Find the matching row (same logic as approval update)
+  for (let i = data.length - 1; i >= 1; i--) {
+    const sheetTeacher = data[i][CONFIG.INDICES.TEACHER_NAME] ? data[i][CONFIG.INDICES.TEACHER_NAME].toString().trim().toLowerCase() : "";
+    const sheetSubject = data[i][CONFIG.INDICES.SUBJECT] ? data[i][CONFIG.INDICES.SUBJECT].toString().toUpperCase() : "";
+
+    // Match teacher and subject code (e.g. "ICT" matches "Computing")
+    if (sheetTeacher === teacherName.toString().trim().toLowerCase() && (sheetSubject.includes(subjectName.toUpperCase()) || subjectName.toUpperCase().includes(sheetSubject))) {
+      targetSheet.getRange(i + 1, CONFIG.INDICES.AI_AUDIT + 1).setValue(auditText);
+      return;
+    }
+  }
 }
