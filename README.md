@@ -5,14 +5,15 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 ## Features
 
 - **Automated filing and conversion:** Organizes submissions into a chronological folder structure on Google Drive. Converts Microsoft Word (`.docx`) files to PDF using a Google Doc bridge for stable formatting.
-- **AI academic audits (Gemini 3.1 Pro Preview):** Calls the **`gemini-3.1-pro-preview`** model with **3-attempt exponential backoff** (2s, 4s, 8s) for resilience. Audits use subject-aware Cambridge-style rubrics, **weekly lesson-count completeness**, **subject continuity**, and **resubmission / re-audit** context. The model outputs a fixed layout including **LESSONS DETECTED: found / expected**, a **RATING** out of 10, and **STATUS** (7.0 threshold).
-- **Autonomous Scheduling:** Reminders and reports use a **`Term Schedule`** tab to look up today's date and determine the target week perfectly, eliminating manual "week guessing."
-- **Self-Healing Recovery:** An hourly **Recovery Sweeper** (`retryFailedAudits`) scans for `PENDING API RETRY` or `GEMINI REJECTED` statuses and automatically re-processes them, ensuring 100% compliance tracking even during API outages.
-- **Granular Compliance Tracking:** The `/defaulters` command and morning reminders use a Map-based engine to parse AI audits. Defaulters are flagged as **❌ Missing** or **⚠️ Partial (X/Y done)**.
-- **Phase 2 — Deliverables matrix:** **`Teaching Load`** sheet defines what each teacher must submit. Friday reports compare submissions to that matrix using normalized keys.
-- **Leadership oversight (Telegram):** Audit summaries go to leadership with inline **Approve** / **Request Revision** actions.
-- **Lateness and Reports:** Automated receipts, immediate late alerts, and a Friday HOD report covering late/missing work.
-- **Roster and form sync:** **`FormService.js`** automates **Class**, **Subject**, and **Teacher** dropdowns, enforcing a **Combined Cohort Strategy** to match matrix keys.
+- **AI academic audits (Gemini 3.1 Pro Preview):** Calls **`gemini-3.1-pro-preview`** with **3-attempt exponential backoff** (2s, 4s, 8s) for resilience. Heavy work does **not** run inside the form-submit trigger: submissions are logged immediately with a **pending** placeholder, and a **time-driven queue** completes audits safely (see below). Audits use subject-aware Cambridge-style rubrics, **weekly lesson-count completeness**, **subject continuity**, and **resubmission / re-audit** context. The model is instructed to output **`LESSONS DETECTED: [N] Lessons / [M] Lessons`** so downstream **Email** and **Telegram** parsers stay aligned.
+- **Queued processing (timeout-safe):** `onFormSubmit` writes **`CONFIG.AUDIT_PENDING_PLACEHOLDER`** to the weekly tab and exits quickly. **`processPendingAudits`** runs on a **10-minute** time trigger, acquires a lock, and completes **at most one** pending audit per run (Gemini + sheet update + Telegram). This avoids Google Apps Script’s **6-minute** execution limit when many teachers submit at once or when using the Pro model.
+- **Autonomous scheduling:** Reminders and reports use a **`Term Schedule`** tab to look up today’s date and determine the target week—no manual week guessing.
+- **Failure recovery (reset-to-queue):** An hourly job (**`retryFailedAudits`**) scans recent week tabs for failed audit text (`GEMINI REJECTED`, `PENDING API RETRY`, etc.) and **resets those cells to the pending placeholder**. It does **not** call Gemini inline. The **10-minute** queue picks up each row in isolation—no multi-retry pile-up in a single run.
+- **Granular compliance tracking:** The **`/defaulters`** command and **morning reminders** use a Map-based engine with **fraction-style** parsing of `LESSONS DETECTED` (including bundled “periods/lessons” text). Defaulters are flagged as **Missing** or **Partial (X/Y done)**. Morning reminder emails throttle sends (**`Utilities.sleep(1500)`**) to reduce Mail quota spikes.
+- **Phase 2 — Deliverables matrix:** The **`Teaching Load`** sheet defines what each teacher must submit. Friday reports compare submissions to that matrix using normalized keys.
+- **Leadership oversight (Telegram):** Audit summaries go to leadership with inline **Approve** / **Request Revision** actions. **`sendTelegramMessage`** uses **429-aware exponential backoff** for burst traffic.
+- **Lateness and reports:** Automated receipts, immediate late HOD alerts, and a Friday HOD report covering late/missing work.
+- **Roster and form sync (manual, quota-safe):** **`FormService.js`** builds **Class**, **Subject**, and **Teacher** lists from the spreadsheet. Admins run **HecTech Tools → Sync Form Dropdowns** from the sheet menu (`onOpen`) after editing **Staff Roster** or **Teaching Load**—no **onEdit** storm against the Forms API.
 
 ## Tech stack
 
@@ -26,22 +27,23 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 
 | File | Description |
 |------|-------------|
-| `Main.js` | Orchestration, webhooks, `createTriggers`, and the **Recovery Sweeper**. |
-| `AiService.js` | Gemini API integration with **Exponential Backoff**. |
-| `SheetService.js` | Weekly tabs, roster, **Autonomous Schedule lookup**, and teaching load. |
-| `EmailService.js` | Receipts, late alerts, Friday report, and **Wed-Thu-Fri Morning Reminders**. |
-| `TelegramService.js` | Audit alerts, callbacks, and **Granular `/defaulters` Tracking**. |
-| `FormService.js` | Dropdown automation and standardization. |
-| `Config.js` | Centralized settings and Script Properties. |
-| `Utils.js` | Ghanaian date parsing and deadline math. |
+| `Main.js` | `onFormSubmit`, `doPost` (Telegram), `createTriggers`, **`processPendingAudits`**, **`retryFailedAudits`** (reset-to-queue). |
+| `AiService.js` | Gemini API integration with exponential backoff; strict **`LESSONS DETECTED`** line format. |
+| `SheetService.js` | Weekly tabs, roster, **Term Schedule** lookup, teaching load. |
+| `EmailService.js` | Receipts, late alerts, Friday report, **Wed–Thu–Fri morning reminders**. |
+| `TelegramService.js` | Audit alerts, callbacks, **`/defaulters`**, **`/status`**, send backoff. |
+| `FormService.js` | **`updateAllFormDropdowns`**, **`onOpen`** → **HecTech Tools** menu. |
+| `DriveService.js` | Drive filing, conversion, **`extractTextFromFiles`** for Gemini. |
+| `Config.js` | Centralized settings, **`AUDIT_PENDING_PLACEHOLDER`**, Script Properties. |
+| `Utils.js` | Ghanaian date parsing, Friday deadline (optional comma in month-day-year), lateness. |
 
 ## Spreadsheet model
 
-- **`Form responses 1`** — raw data source.
-- **`Staff Roster`** — teacher/dept/email mapping.
+- **`Form responses 1`** — raw data source (optional **`AI_AUDIT`** column index in `CONFIG` if you mirror weekly audits for reminders).
+- **`Staff Roster`** — teacher / department / email → HOD routing.
 - **`Teaching Load`** — matrix of expected deliverables and **Lessons/WK**.
 - **`Term Schedule`** — calendar master for autonomous week selection.
-- **`Week 1`, `Week 2`, …** — processed logs with AI audits.
+- **`Week 1`, `Week 2`, …** — processed logs with **AI Audit** text (source of truth for defaulters and BI).
 
 ## Setup
 
@@ -61,8 +63,9 @@ An enterprise-grade Google Apps Script (GAS) system for St. Adelaide Internation
 | `EMAIL_UPPER_HOD` | Upper HOD email | `abigail@...` |
 
 3. **Advanced services:** Enable **Drive API v3** in the Apps Script editor.
-4. **Triggers:** Run `createTriggers()` once from the editor.
-5. **Data quality:** **Teaching Load** names should match form **Teacher / Class / Subject** text. The system uses **Normalization (lower-case, trimmed, and space-agnostic)** to ensure robust matching even with minor typos.
+4. **Triggers:** Run **`createTriggers()`** once from the editor (installs form submit, Friday report, morning reminders, **hourly** retry reset, **10-minute** pending queue—**not** form dropdown auto-sync).
+5. **Form dropdowns:** Open the master spreadsheet and use **HecTech Tools → Sync Form Dropdowns** after roster/load changes.
+6. **Data quality:** **Teaching Load** names should match form **Teacher / Class / Subject** text. The system uses **normalization** (lower-case, trimmed, spaces collapsed) for matching.
 
 ## Board / BI note
 

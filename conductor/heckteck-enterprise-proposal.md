@@ -39,6 +39,8 @@ Submitted files are organized in Drive with consistent naming and week structure
 
 Each submission is reviewed against **Cambridge-aligned pedagogical expectations** with **strict output formatting** so leadership receives comparable, scannable feedback (strengths, flags, rating, status). The model is instructed to respect **subject continuity** where prior-week context exists.
 
+Processing is **queued**: heavy generation does not block the form submit path; a scheduled job drains the queue in **single-row** steps so operations stay within platform time limits at high volume.
+
 ### D. Deliverables matrix enforcement
 
 The **Teaching Load** spreadsheet is the system of record for what each teacher must submit (teacher + class + subject). Weekly reports compare **submissions against that matrix**, so “ghosting” a class/subject is surfaced explicitly.
@@ -60,7 +62,7 @@ Leadership can present a **live Academic Performance Dashboard** connected to th
 | Compliance | Fewer undetected missing class/subject submissions; clearer weekly “what’s owed” picture |
 | Quality | Consistent structured feedback and scoring across subjects and weeks; enforced 7.0/10 automated threshold |
 | Punctuality | Time-based patterns visible by week; supports accountability without argument |
-| Leadership time | Less manual spreadsheet reconciliation; automated form setup and matrix management |
+| Leadership time | Less manual spreadsheet reconciliation; **one-click form dropdown sync** from the sheet (**HecTech Tools** menu) and matrix management |
 | Governance | A defensible story for parents, inspectors, and partners: “We measure and monitor instructional planning systematically.” |
 
 *Specific percentage targets should be set after one full term of baseline data.*
@@ -74,7 +76,7 @@ A realistic annual package typically covers:
 - **Platform and API usage** (document intelligence / model access at operational volume)
 - **Integration maintenance** (form, sheet, Drive, Telegram, reporting)
 - **Security and continuity** (controlled keys, backups of configuration, controlled change management)
-- **Support window** (break/fix during term time, minor adjustments to rubric language, **automated form setup**, or reporting)
+- **Support window** (break/fix during term time, minor adjustments to rubric language, **sheet-driven form dropdown sync**, or reporting)
 
 The board is not buying “AI hype.” It is buying **repeatable operations**: the same rules applied every week, to every submission, with evidence preserved in the sheet and visible in the dashboard.
 
@@ -96,9 +98,9 @@ Calculated fields such as extracting **RATING** and **LESSONS DETECTED** should 
 - **Phase 1 — Resubmission & re-audit:** Prior feedback is carried into the next audit; Telegram marks resubmissions.
 - **Phase 2 — Deliverables matrix:** Friday reporting and **Telegram Defaulters** ask “Did they submit what they **owe**?” using **Teaching Load** + **Staff Roster** routing.
 - **Phase 3 — Lessons/WK completeness:** Expected weekly lesson count drives the audit and Telegram partial-submission warnings (**Granular Tracking**).
-- **Phase 4 — Form Automation:** Automated setup for Class (**Combined Cohort Strategy**), Subject (**Computing** standardization), and Teacher dropdowns.
-- **Phase 5 — Enterprise Resilience:** **Exponential Backoff** for API stability and a **Self-Healing Recovery Sweeper** for 100% compliance assurance.
-- **Phase 6 — Autonomous Calendar:** Reminders and reporting aligned to a **Term Schedule** for zero-touch operation.
+- **Phase 4 — Form alignment:** Class / Subject / Teacher dropdowns are populated from **Teaching Load** and **Staff Roster** via **`updateAllFormDropdowns`**, triggered manually from the spreadsheet (**HecTech Tools → Sync Form Dropdowns**) to protect Forms API quotas.
+- **Phase 5 — Enterprise resilience:** **Queued Pro audits** (pending placeholder + **10-minute** processor, one completion per run) avoid Apps Script **6-minute** timeouts; **Gemini** backoff on overload; **hourly** sweeper **resets** failed audit cells to pending (no inline re-generation); **Telegram** send backoff on **429**.
+- **Phase 6 — Autonomous calendar:** Reminders and reporting aligned to a **Term Schedule** for zero-touch operation.
 
 ---
 
