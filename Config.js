@@ -29,7 +29,9 @@ const CONFIG = {
     CLASS: 4,
     SUBJECT: 5,
     UPLOAD_LINK: 6,
-    TEACHER_EMAIL: 7 
+    TEACHER_EMAIL: 7,
+    // Optional: column on Form responses 1 when audit text is mirrored (e.g. IMPORTRANGE from weekly tabs)
+    AI_AUDIT: 8
   },
 
   // 2. INDICES FOR WEEKLY TABS 
@@ -51,6 +53,9 @@ const CONFIG = {
   STATUS_COLUMN_NUMBER: 8, // Column H: HOD Check
   
   HEADERS: ["Timestamp", "Week Range", "HOD", "Teacher Name", "Class", "Subject", "Upload Link", "HOD Check", "Days Late", "AI Audit"],
+
+  /** AI Audit column while waiting for background Gemini processing */
+  AUDIT_PENDING_PLACEHOLDER: "🤖 Audit Pending...",
 
   DEADLINE: {
     HOUR: 23,

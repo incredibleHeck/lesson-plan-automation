@@ -24,7 +24,7 @@ function updateAllFormDropdowns() {
   if (rosterSheet) {
     const lastRow = rosterSheet.getLastRow();
     if (lastRow >= 2) {
-      teacherNames = rosterSheet.getRange(2, 1, lastRow - 1, 1).getValues()
+      teacherNames = rosterSheet.getRange(2, 1, lastRow, 1).getValues()
         .map(row => row[0])
         .filter(name => name && name.toString().trim() !== "")
         .sort();
@@ -54,37 +54,43 @@ function updateAllFormDropdowns() {
     subjectList = Array.from(subjectSet).sort();
   }
 
-  // 4. Update the Form Items
+  // 4. Update the Form Items with Resilient Matching and Safety Checks
   items.forEach(item => {
-    const title = item.getTitle().trim();
+    const title = item.getTitle().toLowerCase();
     const listItem = item.asListItem();
 
-    if (title === "Class") {
-      listItem.setChoiceValues(classList);
-      Logger.log("✅ Updated 'Class' dropdown.");
-    } else if (title === "Subject") {
-      listItem.setChoiceValues(subjectList);
-      Logger.log("✅ Updated 'Subject' dropdown.");
-    } else if (title.toLowerCase().includes("teacher") && title.toLowerCase().includes("name")) {
+    if (title.includes("class")) {
+      if (classList.length > 0) {
+        listItem.setChoiceValues(classList);
+        Logger.log("✅ Updated 'Class' dropdown.");
+      } else {
+        Logger.log("⚠️ Skipped 'Class' dropdown: No data found in Teaching Load.");
+      }
+    } else if (title.includes("subject")) {
+      if (subjectList.length > 0) {
+        listItem.setChoiceValues(subjectList);
+        Logger.log("✅ Updated 'Subject' dropdown.");
+      } else {
+        Logger.log("⚠️ Skipped 'Subject' dropdown: No data found in Teaching Load.");
+      }
+    } else if (title.includes("teacher") && title.includes("name")) {
       if (teacherNames.length > 0) {
         listItem.setChoiceValues(teacherNames);
         Logger.log("✅ Updated 'Teacher Name' dropdown.");
+      } else {
+        Logger.log("⚠️ Skipped 'Teacher Name' dropdown: No data found in Staff Roster.");
       }
     }
   });
 }
 
 /**
- * AUTOMATION TRIGGER: Runs whenever the spreadsheet is edited.
- * If the edit happens on specific tabs, it refreshes the form dropdowns.
+ * UI TRIGGER: Creates a custom menu in the Google Sheet for manual syncing.
+ * Replaces the dangerous onEdit trigger to protect API quotas.
  */
-function syncRosterToForm(e) {
-  if (!e || !e.range) return;
-  
-  const editedSheetName = e.range.getSheet().getName();
-  
-  // Refresh if Staff Roster or Teaching Load is modified
-  if (editedSheetName === "Staff Roster" || editedSheetName === "Teaching Load") {
-    updateAllFormDropdowns();
-  }
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu("HecTech Tools")
+    .addItem("🔄 Sync Form Dropdowns", "updateAllFormDropdowns")
+    .addToUi();
 }

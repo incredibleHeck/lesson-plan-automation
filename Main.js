@@ -17,7 +17,6 @@ function onFormSubmit(e) {
   const teacherName = responses[CONFIG.FORM_INDICES.TEACHER_NAME];
   const className = responses[CONFIG.FORM_INDICES.CLASS];
   const subjectName = responses[CONFIG.FORM_INDICES.SUBJECT];
-  const teacherEmail = responses[CONFIG.FORM_INDICES.TEACHER_EMAIL];
 
   let fileLink = responses[CONFIG.FORM_INDICES.UPLOAD_LINK];
   if (!fileLink || typeof fileLink !== "string" || !fileLink.includes("drive.google.com")) {
@@ -29,7 +28,6 @@ function onFormSubmit(e) {
   const weekName = extractWeekName(fullWeekString);
   const deadline = calculateFridayDeadline(fullWeekString);
   const daysLate = calculateDaysLate(timestamp, deadline);
-  const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
 
   // 2. Immediate HOD Alert if Late (Patched to use CONFIG.HOD_NAMES and HOD_EMAILS)
   if (daysLate > 0) {
@@ -46,47 +44,17 @@ function onFormSubmit(e) {
   }
 
   // 3. Process in Drive (Filing & Renaming)
-  let fileId = null;
   try {
-    fileId = processDriveFile(fileLink, weekName, className, subjectName, teacherName);
+    processDriveFile(fileLink, weekName, className, subjectName, teacherName);
   } catch (err) {
     Logger.log("Error processing drive file: " + err.message);
   }
 
-  // 4. TIME-TRAVEL: GET PREVIOUS WEEK'S FILE
-  const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, fullWeekString);
+  // 4. Log to sheet with pending placeholder — Gemini audit runs in processPendingAudits (decoupled from this trigger)
+  logSubmissionToSheet(responses, weekName, daysLate, CONFIG.AUDIT_PENDING_PLACEHOLDER);
 
-  const resubmissionData = getResubmissionData(teacherName, className, subjectName, fullWeekString);
-
-  const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
-
-  // 5. OPTIMISTIC SAVING: Log to Sheet first with a placeholder
-  logSubmissionToSheet(responses, weekName, daysLate, "🤖 Audit Pending...");
-  
-  // 6. Send Immediate Confirmation Receipt to Teacher
+  // 5. Send immediate confirmation receipt to teacher
   sendTeacherReceipt(teacherName, subjectName, className, fullWeekString);
-
-  // 7. GENERATE AUDIT (NOW WITH CONTINUITY!)
-  let aiAuditText;
-  try {
-    // We pass fileLink so the extractor has ALL the raw links
-    aiAuditText = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
-  } catch (err) {
-    Logger.log("Audit Generation Failure: " + err.message);
-    aiAuditText = "⚠️ AI Audit Failed: Please notify the system administrator.";
-  }
-
-  // 8. Update the sheet with the final audit
-  updateSheetWithAudit(teacherName, subjectName, weekName, aiAuditText);
-
-  // 9. Blast the audit report to Telegram!
-  try {
-    const weekMatch = fullWeekString.match(/Week \d+/i);
-    const cleanWeek = weekMatch ? weekMatch[0] : fullWeekString;
-    sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, timestamp, latenessStatus, cleanWeek, resubmissionData.revisionCount);
-  } catch (err) {
-    Logger.log("Error sending Telegram alert: " + err.message);
-  }
 }
 
 /**
@@ -185,18 +153,20 @@ function createTriggers() {
       .everyHours(1)
       .create();
 
-  // 6. CREATE Automatic Roster Sync (Runs whenever the sheet is edited)
-  ScriptApp.newTrigger('syncRosterToForm')
-      .forSpreadsheet(ss)
-      .onEdit()
+  // 5b. Pending audit queue: Pro model runs here sequentially, not on form submit
+  ScriptApp.newTrigger('processPendingAudits')
+      .timeBased()
+      .everyMinutes(10)
       .create();
-      
+
+  // 6. NOTE: Form dropdown sync is manual — use menu “HecTech Tools → Sync Form Dropdowns” (onOpen in FormService.js).
+
   Logger.log("✅ All triggers successfully created by the system!");
 }
 
 /**
- * CRON JOB: Sweeps the weekly tabs for API failures and attempts to re-audit them.
- * Optimized: Only scans the current and previous week to save execution time/quota.
+ * CRON JOB: Finds failed audit cells and resets them to the pending queue.
+ * Does not call Gemini here — processPendingAudits handles AI work one row per run.
  */
 function retryFailedAudits() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -223,49 +193,96 @@ function retryFailedAudits() {
     const AUDIT_COL = CONFIG.INDICES.AI_AUDIT; 
 
     for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const auditStatus = row[AUDIT_COL] ? row[AUDIT_COL].toString() : "";
+      const auditStatus = data[i][AUDIT_COL] ? data[i][AUDIT_COL].toString() : "";
 
       // Target rows that failed due to API demand or errors
-      if (auditStatus.includes("GEMINI REJECTED") || 
-          auditStatus.includes("PENDING API RETRY") || 
+      if (auditStatus.includes("GEMINI REJECTED") ||
+          auditStatus.includes("PENDING API RETRY") ||
           auditStatus.includes("CRITICAL SCRIPT ERROR") ||
           auditStatus.includes("AI Audit Error")) {
-        
-        Logger.log(`Found failed audit on sheet '${sheetName}', row ${i + 1}. Attempting retry...`);
 
-        const timestamp = row[CONFIG.INDICES.TIMESTAMP];
-        const weekRange = row[CONFIG.INDICES.WEEK_STARTING];
-        const hodName = row[CONFIG.INDICES.HOD];
-        const teacherName = row[CONFIG.INDICES.TEACHER_NAME];
-        const className = row[CONFIG.INDICES.CLASS];
-        const subjectName = row[CONFIG.INDICES.SUBJECT];
-        const fileLink = row[CONFIG.INDICES.UPLOAD_LINK];
-        const daysLate = row[CONFIG.INDICES.DAYS_LATE];
-        const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
+        Logger.log(`Found failed audit on sheet '${sheetName}', row ${i + 1}. Resetting to queue...`);
 
-        // Pass the raw fileLink directly so it can process MULTIPLE comma-separated files!
-        if (fileLink) {
-          // Re-calculate resubmission and continuity context
-          const resubmissionData = getResubmissionData(teacherName, className, subjectName, weekRange);
-          const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, weekRange);
-          const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
-
-          // Retry the AI Audit (Now uses fileLink instead of fileId)
-          const newAudit = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
-
-          // If successful (not a pending retry), update the sheet and alert Telegram
-          if (newAudit && !newAudit.includes("PENDING API RETRY")) {
-            sheet.getRange(i + 1, AUDIT_COL + 1).setValue(newAudit);
-            
-            try {
-              sendAuditAlert(teacherName, className, subjectName, newAudit, hodName, parseGhanaianDate(timestamp), latenessStatus, sheetName, resubmissionData.revisionCount);
-            } catch (err) {
-              Logger.log("Error sending Telegram alert during retry: " + err.message);
-            }
-          }
-        }
+        // Do not call generateAiSummary here (avoids 6-minute timeouts). processPendingAudits
+        // picks up CONFIG.AUDIT_PENDING_PLACEHOLDER rows one at a time.
+        sheet.getRange(i + 1, AUDIT_COL + 1).setValue(CONFIG.AUDIT_PENDING_PLACEHOLDER);
       }
     }
   });
+}
+
+/**
+ * Time-driven queue: completes AI audits that were deferred from onFormSubmit.
+ * Processes one pending row per run (sequential, avoids Apps Script 6-minute limit with Gemini Pro).
+ */
+function processPendingAudits() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    Logger.log("processPendingAudits: lock busy, skipping.");
+    return;
+  }
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheets = ss.getSheets();
+    const AUDIT_COL = CONFIG.INDICES.AI_AUDIT;
+    const pendingMarker = CONFIG.AUDIT_PENDING_PLACEHOLDER;
+
+    for (let s = 0; s < sheets.length; s++) {
+      const sheet = sheets[s];
+      if (!/^Week \d+$/i.test(sheet.getName())) {
+        continue;
+      }
+
+      const data = sheet.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const auditVal = data[i][AUDIT_COL];
+        const auditStr = auditVal != null ? auditVal.toString().trim() : "";
+        if (auditStr !== pendingMarker) {
+          continue;
+        }
+
+        const fileLink = data[i][CONFIG.INDICES.UPLOAD_LINK];
+        if (!fileLink) {
+          sheet.getRange(i + 1, AUDIT_COL + 1).setValue("⚠️ AI Audit Failed: No upload link on row.");
+          continue;
+        }
+
+        const timestamp = data[i][CONFIG.INDICES.TIMESTAMP];
+        const weekRange = data[i][CONFIG.INDICES.WEEK_STARTING];
+        const hodName = data[i][CONFIG.INDICES.HOD];
+        const teacherName = data[i][CONFIG.INDICES.TEACHER_NAME];
+        const className = data[i][CONFIG.INDICES.CLASS];
+        const subjectName = data[i][CONFIG.INDICES.SUBJECT];
+        const daysLate = data[i][CONFIG.INDICES.DAYS_LATE];
+        const latenessStatus = daysLate > 0 ? `🔴 LATE (${daysLate} days)` : "🟢 ON TIME";
+
+        const resubmissionData = getResubmissionData(teacherName, className, subjectName, weekRange);
+        const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, weekRange);
+        const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
+
+        let aiAuditText;
+        try {
+          aiAuditText = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
+        } catch (err) {
+          Logger.log("processPendingAudits: " + err.message);
+          aiAuditText = "⚠️ AI Audit Failed: Please notify the system administrator.";
+        }
+
+        updateSheetWithAudit(teacherName, subjectName, sheet.getName(), aiAuditText);
+
+        try {
+          const weekMatch = weekRange.toString().match(/Week \d+/i);
+          const cleanWeek = weekMatch ? weekMatch[0] : weekRange.toString();
+          sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, parseGhanaianDate(timestamp), latenessStatus, cleanWeek, resubmissionData.revisionCount);
+        } catch (err) {
+          Logger.log("processPendingAudits Telegram: " + err.message);
+        }
+
+        return;
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
 }

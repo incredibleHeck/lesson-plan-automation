@@ -26,7 +26,7 @@ function logSubmissionToSheet(responses, weekName, daysLate, aiAuditText) {
     responses[CONFIG.FORM_INDICES.UPLOAD_LINK],
     "UNREAD", // Default HOD Check
     daysLate,
-    aiAuditText || "Audit Pending/Skipped"
+    aiAuditText || CONFIG.AUDIT_PENDING_PLACEHOLDER
   ];
   
   weeklySheet.appendRow(rowData);

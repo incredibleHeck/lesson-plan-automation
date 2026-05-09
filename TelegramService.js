@@ -30,40 +30,62 @@ function escapeHTML(text) {
 
 /**
  * Core function to communicate with the Telegram API.
+ * Uses exponential backoff to protect against HTTP 429 Too Many Requests errors.
  */
 function sendTelegramMessage(chatId, message, keyboard = null) {
   if (!CONFIG.TELEGRAM.BOT_TOKEN || CONFIG.TELEGRAM.BOT_TOKEN === "PASTE_YOUR_BOT_TOKEN_HERE") {
     return;
   }
-  
+
   let safeMessage = message;
   if (safeMessage.length > 4000) {
     safeMessage = safeMessage.substring(0, 4000) + "\n\n<i>...[Message truncated due to length. View full audit in Google Sheets]</i>";
   }
-  
-  const url = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/sendMessage`;
-  
+
   const payload = {
     chat_id: chatId,
     text: safeMessage,
-    parse_mode: "HTML" 
+    parse_mode: "HTML"
   };
 
   if (keyboard) {
-    payload.reply_markup = JSON.stringify(keyboard);
+    payload.reply_markup = keyboard;
   }
-  
+
   const options = {
     method: "post",
     contentType: "application/json",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
-  
-  try {
-    UrlFetchApp.fetch(url, options);
-  } catch (err) {
-    Logger.log("Error sending Telegram message: " + err.message);
+
+  const url = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/sendMessage`;
+
+  let maxRetries = 3;
+  let attempt = 0;
+  let success = false;
+
+  while (attempt < maxRetries && !success) {
+    try {
+      const response = UrlFetchApp.fetch(url, options);
+      const responseCode = response.getResponseCode();
+
+      if (responseCode === 429) {
+        throw new Error("Telegram Rate Limit Exceeded");
+      }
+
+      success = true;
+    } catch (e) {
+      attempt++;
+      Logger.log(`Telegram API Error (Attempt ${attempt}/${maxRetries}): ${e.message}`);
+
+      if (attempt >= maxRetries) {
+        Logger.log("Failed to send Telegram message after max retries.");
+        return;
+      }
+
+      Utilities.sleep(Math.pow(2, attempt) * 1000);
+    }
   }
 }
 
@@ -182,21 +204,38 @@ function handleSlashCommand(message) {
       const classLevel = submissionData[i][CONFIG.INDICES.CLASS];
       const subject = submissionData[i][CONFIG.INDICES.SUBJECT];
       const auditText = submissionData[i][CONFIG.INDICES.AI_AUDIT] ? submissionData[i][CONFIG.INDICES.AI_AUDIT].toString() : "";
-      
+
       if (teacher && classLevel && subject) {
-        const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, '');
-        
-        let foundLessons = 0;
-        const match = auditText.match(/LESSONS DETECTED:\s*(\d+)/i);
+        const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, "");
+
+        let foundLessons = submittedMap.has(subKey) ? submittedMap.get(subKey) : 0;
+        let currentFound = 0;
+
+        // Advanced fraction extraction to handle "2 Plans (4 Periods) / 4 Lessons" scenarios
+        const match = auditText.match(/LESSONS DETECTED:\s*(.*?)\//i);
+
         if (match) {
-          foundLessons = parseInt(match[1], 10);
-        } else if (auditText.length > 10) { 
-          foundLessons = 1; // Fallback if AI missed strict formatting but still audited
+          const leftSide = match[1].toUpperCase();
+
+          if (leftSide.includes("PERIOD") || leftSide.includes("LESSON")) {
+            const periodMatch = leftSide.match(/(\d+)\s*(?:PERIOD|LESSON)/);
+            if (periodMatch) {
+              currentFound = parseInt(periodMatch[1], 10);
+            } else {
+              const numMatch = leftSide.match(/(\d+)/);
+              if (numMatch) currentFound = parseInt(numMatch[1], 10);
+            }
+          } else {
+            const numMatch = leftSide.match(/(\d+)/);
+            if (numMatch) {
+              currentFound = parseInt(numMatch[1], 10);
+            }
+          }
+        } else if (auditText.length > 10 && !auditText.includes("EXTRACTION ERROR") && !auditText.includes("Skipped")) {
+          currentFound = 1;
         }
 
-        // If multiple submissions exist, keep the highest detected number
-        const currentFound = submittedMap.get(subKey) || 0;
-        submittedMap.set(subKey, Math.max(currentFound, foundLessons));
+        submittedMap.set(subKey, foundLessons + currentFound);
       }
     }
 

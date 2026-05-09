@@ -71,9 +71,10 @@ function generateAiSummary(fileLink, className, subjectName, previousFileId, res
 }
 
 /**
- * Core function to call Gemini 3 Flash with strict formatting and context.
+ * Core function to call Gemini API with strict formatting and context.
  */
 function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, subjectName, resubmissionData, expectedLessons = 1) {
+  // Maintaining the advanced preview model for maximum reasoning capabilities
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`;
 
   const systemInstruction =
@@ -88,7 +89,8 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     "Structure your response EXACTLY like this:\n\n" +
     "📖 TOPIC: [Extract the main topic of this lesson]\n" +
     "🎯 OBJECTIVES: [Extract 1-2 core Learning Objectives]\n" +
-    "⏱️ LESSONS DETECTED: [Found Count] / [Expected Count]\n\n" +
+    // CRITICAL: Enforce "Lessons" / "Periods" wording so downstream Regex (Email/Telegram) parses counts reliably
+    "⏱️ LESSONS DETECTED: [Found Count] Lessons / [Expected Count] Lessons\n\n" +
     "🏆 STRENGTHS:\n• [Point 1]\n• [Point 2]\n• [Point 3]\n\n" +
     "🚨 FLAGS:\n• [Point 1]\n• [Point 2]\n• [Point 3]\n\n" +
     "📊 RATING: [Float]/10\n" +

@@ -222,17 +222,36 @@ function sendMorningReminders() {
       const auditText = data[i][CONFIG.FORM_INDICES.AI_AUDIT] ? data[i][CONFIG.FORM_INDICES.AI_AUDIT].toString() : "";
 
       const subKey = `${teacher}_${classLevel}_${subject}`.toLowerCase().replace(/\s+/g, "");
-      
-      let foundLessons = 0;
-      const match = auditText.match(/LESSONS DETECTED:\s*(\d+)/i);
+
+      let foundLessons = submittedMap.has(subKey) ? submittedMap.get(subKey) : 0;
+      let currentFound = 0;
+
+      // Advanced fraction extraction to handle "2 Plans (4 Periods) / 4 Lessons" scenarios
+      const match = auditText.match(/LESSONS DETECTED:\s*(.*?)\//i);
+
       if (match) {
-        foundLessons = parseInt(match[1], 10);
-      } else if (auditText.length > 10) {
-        foundLessons = 1;
+        const leftSide = match[1].toUpperCase();
+
+        if (leftSide.includes("PERIOD") || leftSide.includes("LESSON")) {
+          const periodMatch = leftSide.match(/(\d+)\s*(?:PERIOD|LESSON)/);
+          if (periodMatch) {
+            currentFound = parseInt(periodMatch[1], 10);
+          } else {
+            const numMatch = leftSide.match(/(\d+)/);
+            if (numMatch) currentFound = parseInt(numMatch[1], 10);
+          }
+        } else {
+          const numMatch = leftSide.match(/(\d+)/);
+          if (numMatch) {
+            currentFound = parseInt(numMatch[1], 10);
+          }
+        }
+      } else if (auditText.length > 10 && !auditText.includes("EXTRACTION ERROR") && !auditText.includes("Skipped")) {
+        currentFound = 1;
       }
 
-      const currentFound = submittedMap.get(subKey) || 0;
-      submittedMap.set(subKey, Math.max(currentFound, foundLessons));
+      // Add lessons together to support multiple submissions
+      submittedMap.set(subKey, foundLessons + currentFound);
     }
   }
 
@@ -260,25 +279,28 @@ function sendMorningReminders() {
     }
   });
 
-  // 4. Send the personalized email to each defaulter
+  // 4. Send the personalized email to each defaulter with API pacing
   const roster = getDynamicTeacherRoster();
 
   Object.keys(missingByTeacher).forEach(teacher => {
     const teacherInfo = roster[teacher];
     if (teacherInfo && teacherInfo.email) {
       const missingItemsList = missingByTeacher[teacher].join("\n");
-      
+
       const subject = `Action Required: Missing Lesson Plans - ${targetWeek}`;
-      const body = `Dear ${teacher},\n\nThis is an automated morning reminder from the Academic Office.\n\nOur records show that you have not yet submitted the following expected lesson plans for ${targetWeek}:\n\n${missingItemsList}\n\nPlease submit these deliverables to the HeckTeck portal at your earliest convenience to ensure pedagogical continuity.\n\nThank you,\nSt. Adelaide Ops Bot`;
-      
+      const body = `Dear ${teacher},\n\nThis is an automated morning reminder from the Academic Office.\n\nOur records show that you have not yet submitted the following expected lesson plans for ${targetWeek}:\n\n${missingItemsList}\n\nPlease submit these deliverables to the HecTech portal at your earliest convenience to ensure pedagogical continuity.\n\nThank you,\nSt. Adelaide Ops Bot`;
+
       MailApp.sendEmail({
         to: teacherInfo.email,
-        cc: teacherInfo.hodEmail, // Keep the HOD in the loop automatically
+        cc: teacherInfo.hodEmail,
         subject: subject,
         body: body,
         name: "St. Adelaide Academic Office",
         replyTo: teacherInfo.hodEmail
       });
+
+      // API SAFEGUARD: Throttle to prevent "Service invoked too many times" quota errors
+      Utilities.sleep(1500);
     }
   });
 }

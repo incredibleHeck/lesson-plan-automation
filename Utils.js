@@ -18,8 +18,8 @@ function extractWeekName(fullWeekString) {
 function calculateFridayDeadline(rangeText) {
   if (!rangeText) return null;
   
-  // Safely extract the date string (e.g., "May 4, 2026")
-  const dateMatch = rangeText.match(/([A-Z][a-z]+ \d{1,2}, \d{4})/);
+  // Extract expanded month-day-year (e.g. "May 4, 2026" or "May 4 2026" — comma optional)
+  const dateMatch = rangeText.match(/([A-Z][a-z]+ \d{1,2},? \d{4})/);
   if (!dateMatch) {
     Logger.log("Warning: Could not parse deadline date from string: " + rangeText);
     return null; 
