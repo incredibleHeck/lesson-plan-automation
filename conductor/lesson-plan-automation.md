@@ -7,7 +7,7 @@ End-to-end automation for St. Adelaide lesson plans: **form submit → Drive fil
 | File | Role |
 |------|------|
 | `Config.js` | `CONFIG`, HOD names/emails, form vs weekly column indices (including optional `FORM_INDICES.AI_AUDIT`), headers, `AUDIT_PENDING_PLACEHOLDER`, `DEADLINE`; secrets from Script Properties |
-| `Main.js` | `onFormSubmit` (fast path: no Gemini), `doPost` (Telegram), `createTriggers`, **`processPendingAudits`** (one audit per run), **`retryFailedAudits`** (reset failed cells to pending—no API calls) |
+| `Main.js` | `onFormSubmit` (fast path: no Gemini), `doPost` (Telegram), `createTriggers`, **`processPendingAudits`** (one audit per run), **`retryFailedAudits`** (hourly sweep of all **`Week N`** tabs; reset failed cells to pending—no API calls) |
 | `Utils.js` | Week parsing (`extractWeekName`), Friday deadline (month-day-year regex with **optional comma**), lateness (`Math.ceil` days), Ghanaian date parsing for form timestamps |
 | `DriveService.js` | `CONFIG.MASTER_FOLDER_NAME`, move/rename, Word→PDF, **`extractTextFromFiles`** for Gemini input |
 | `SheetService.js` | `logSubmissionToSheet` (weekly tabs), `updateApprovalStatus`, `getDynamicTeacherRoster`, `getPreviousLessonFileId`, `getResubmissionData`, `getTeachingLoad`, `getExpectedLessonCount`, **`getTargetWeekFromSchedule`** |
@@ -22,7 +22,7 @@ End-to-end automation for St. Adelaide lesson plans: **form submit → Drive fil
 - **API:** `generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent`
 - **Key:** Script Property `GEMINI_API_KEY`
 - **Execution:** Audits run in **`processPendingAudits`**, not in `onFormSubmit`, to stay under the **6-minute** Apps Script limit.
-- **Resilience:** 3-attempt exponential backoff (2s, 4s, 8s) for high-demand rejections; hourly **`retryFailedAudits`** resets failed rows to **`CONFIG.AUDIT_PENDING_PLACEHOLDER`** for the queue to drain.
+- **Resilience:** 3-attempt exponential backoff (2s, 4s, 8s) for high-demand rejections; hourly **`retryFailedAudits`** walks every **`Week X`** sheet and resets matching failed rows to **`CONFIG.AUDIT_PENDING_PLACEHOLDER`** for the queue to drain.
 
 ## Spreadsheet tabs
 
@@ -41,7 +41,7 @@ End-to-end automation for St. Adelaide lesson plans: **form submit → Drive fil
 3. **Lesson count & granular tracking:** Expected count from **Lessons/WK**; **`/defaulters`** and **morning reminders** parse **`LESSONS DETECTED`** with fraction-style logic and **additive** totals across multiple rows for split submissions.
 4. **Form alignment:** **`updateAllFormDropdowns`** uses resilient title matching (`includes("class")`, etc.) and **skips** `setChoiceValues` when a list is empty. Sync runs from **HecTech Tools → Sync Form Dropdowns** after **Staff Roster** / **Teaching Load** edits.
 5. **Audit queue:** `onFormSubmit` sets **`AUDIT_PENDING_PLACEHOLDER`**; **`processPendingAudits`** (10-minute trigger, script lock, **one row per run**) runs **`generateAiSummary`**, **`updateSheetWithAudit`**, **`sendAuditAlert`**.
-6. **Failure reset:** **`retryFailedAudits`** (hourly) finds `GEMINI REJECTED`, `PENDING API RETRY`, etc., and **only** resets the cell to the pending placeholder—**no** inline Gemini calls.
+6. **Failure reset:** **`retryFailedAudits`** (hourly, all tabs named **`Week N`**) finds `GEMINI REJECTED`, `PENDING API RETRY`, etc., and **only** resets the cell to the pending placeholder—**no** inline Gemini calls.
 
 ## Secrets (Script Properties)
 

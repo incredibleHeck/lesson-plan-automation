@@ -39,6 +39,18 @@ function generateAiSummary(fileLink, className, subjectName, previousFileId, res
       - Check if the lesson uses the three-step approach: concrete (objects), representational (pictures), and abstract (symbols/numbers).
       - Ensure there is a balance or clear focus on Number, Geometry and Measure, or Statistics and Probability.`;
     }
+    else if (subjectLower.includes("chem")) {
+      subjectCriteria += `
+      CHEMISTRY FOCUS (Cambridge IGCSE Chemistry 0620/0971 — Teacher Guide):
+      - PLANNING STRUCTURE: Clear learning objectives (syllabus + lesson-level); prior learning identified; SUBJECT VOCABULARY and LANGUAGE FOCUS spelled out (content and language integrated, not an add-on); differentiation planned (challenge + support); EXPLICIT formative assessment moments; RESOURCES listed (texts, links, apparatus, CHEMICALS where relevant).
+      - LESSON STRUCTURE: Beginning (~5 min) — learner-focused engagement (not solely teacher-talk), activate prior knowledge (short oral/written/quick demo), stimulus for interest and terminology. MAIN phase —develop skills/concepts with sensible pacing; maximize learner involvement; note timings where possible; scaffold language alongside content. END (~5 min) —organized closure (pairs/groups check understanding), brief review/link to next lesson; teacher may consolidate language corrections seen in-lesson.
+      - METHODOLOGY: Prioritize ACTIVE learning over passive lecturing/media; scaffolding (e.g. guiding questions during input); integrate CHEMISTRY LANGUAGE (pre-teach key terms, sentence stems/models, visuals/writing frames); collaborative pair/group work where appropriate; personalization to learners' contexts.
+      - DIFFERENTIATION: Expect awareness of differentiation by outcome, task, or support (open-ended probes, layered tasks, writing frames/templates for those who need them).
+      - CLASS PRACTICALS: Small groups (~2–3); teacher SHOULD trial the practical beforehand with realistic timings; multi-step procedures need WRITTEN instructions (worksheets)—verify understanding (e.g. learners restate instructions); SIMPLE, CLEAR TITLE stating purpose where possible; allow learner setup/clear-away when feasible.
+      - DEMONSTRATION PRACTICALS: Use ONLY when justified (dangerous/complex apparatus, modelling specific technique step-by-step, costly kit)—NOT as convenience substitute for learner practicals; avoid demos for spectacle alone—effective hooks must lead to WHY questions.
+      - MANDATORY FOR ANY PRACTICAL (class or demo): A formal RISK ASSESSMENT referencing chemicals, procedure, LOCATION (lab vs classroom), and WHO conducts it—flag plans that omit this.
+      - Encourage POST-LESSON reflection language (evaluate objectives realism, timing, differentiation, learner response) where the plan lends itself to it.`;
+    }
     else if (subjectLower.includes("science")) {
       subjectCriteria += `
       SCIENCE FOCUS:

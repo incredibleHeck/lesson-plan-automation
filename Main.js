@@ -166,36 +166,26 @@ function createTriggers() {
 
 /**
  * CRON JOB: Finds failed audit cells and resets them to the pending queue.
+ * UPDATED: Sweeps ALL "Week X" tabs to ensure no failed audit is left behind.
  * Does not call Gemini here — processPendingAudits handles AI work one row per run.
  */
 function retryFailedAudits() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // 1. Identify target weeks to scan (Current + Previous)
-  const currentWeek = getTargetWeekFromSchedule();
-  if (!currentWeek) return;
+  const sheets = ss.getSheets();
+  const AUDIT_COL = CONFIG.INDICES.AI_AUDIT;
 
-  const currentWeekNum = parseInt(currentWeek.replace("Week ", ""), 10);
-  const sheetsToScan = [ss.getSheetByName(currentWeek)];
-  
-  if (currentWeekNum > 1) {
-    const previousWeek = "Week " + (currentWeekNum - 1);
-    const prevSheet = ss.getSheetByName(previousWeek);
-    if (prevSheet) sheetsToScan.push(prevSheet);
-  }
-
-  // 2. Scan identified sheets
-  sheetsToScan.forEach(sheet => {
-    if (!sheet) return;
+  sheets.forEach(sheet => {
     const sheetName = sheet.getName();
 
+    if (!/^Week \d+$/i.test(sheetName)) {
+      return;
+    }
+
     const data = sheet.getDataRange().getValues();
-    const AUDIT_COL = CONFIG.INDICES.AI_AUDIT; 
 
     for (let i = 1; i < data.length; i++) {
       const auditStatus = data[i][AUDIT_COL] ? data[i][AUDIT_COL].toString() : "";
 
-      // Target rows that failed due to API demand or errors
       if (auditStatus.includes("GEMINI REJECTED") ||
           auditStatus.includes("PENDING API RETRY") ||
           auditStatus.includes("CRITICAL SCRIPT ERROR") ||
@@ -203,8 +193,6 @@ function retryFailedAudits() {
 
         Logger.log(`Found failed audit on sheet '${sheetName}', row ${i + 1}. Resetting to queue...`);
 
-        // Do not call generateAiSummary here (avoids 6-minute timeouts). processPendingAudits
-        // picks up CONFIG.AUDIT_PENDING_PLACEHOLDER rows one at a time.
         sheet.getRange(i + 1, AUDIT_COL + 1).setValue(CONFIG.AUDIT_PENDING_PLACEHOLDER);
       }
     }
