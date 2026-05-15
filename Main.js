@@ -167,7 +167,7 @@ function createTriggers() {
 /**
  * CRON JOB: Finds failed audit cells and resets them to the pending queue.
  * UPDATED: Sweeps ALL "Week X" tabs to ensure no failed audit is left behind.
- * Does not call Gemini here — processPendingAudits handles AI work one row per run.
+ * Does not call Gemini here — processPendingAudits handles AI work in time-batched runs.
  */
 function retryFailedAudits() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -201,9 +201,12 @@ function retryFailedAudits() {
 
 /**
  * Time-driven queue: completes AI audits that were deferred from onFormSubmit.
- * Processes one pending row per run (sequential, avoids Apps Script 6-minute limit with Gemini Pro).
+ * UPDATED: Processes multiple rows in one run until the 5-minute safety buffer is reached.
  */
 function processPendingAudits() {
+  const startTime = new Date();
+  const MAX_RUN_TIME_MS = 300000; // 5 minutes (safe buffer under 6-minute limit)
+
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) {
     Logger.log("processPendingAudits: lock busy, skipping.");
@@ -218,21 +221,24 @@ function processPendingAudits() {
 
     for (let s = 0; s < sheets.length; s++) {
       const sheet = sheets[s];
-      if (!/^Week \d+$/i.test(sheet.getName())) {
-        continue;
-      }
+      if (!/^Week \d+$/i.test(sheet.getName())) continue;
 
       const data = sheet.getDataRange().getValues();
+
       for (let i = 1; i < data.length; i++) {
+        if (new Date().getTime() - startTime.getTime() > MAX_RUN_TIME_MS) {
+          Logger.log("Approaching time limit. Stopping run to prevent crash.");
+          return;
+        }
+
         const auditVal = data[i][AUDIT_COL];
         const auditStr = auditVal != null ? auditVal.toString().trim() : "";
-        if (auditStr !== pendingMarker) {
-          continue;
-        }
+
+        if (auditStr !== pendingMarker) continue;
 
         const fileLink = data[i][CONFIG.INDICES.UPLOAD_LINK];
         if (!fileLink) {
-          sheet.getRange(i + 1, AUDIT_COL + 1).setValue("⚠️ AI Audit Failed: No upload link on row.");
+          sheet.getRange(i + 1, AUDIT_COL + 1).setValue("⚠️ AI Audit Failed: No upload link.");
           continue;
         }
 
@@ -249,25 +255,25 @@ function processPendingAudits() {
         const previousFileId = getPreviousLessonFileId(teacherName, className, subjectName, weekRange);
         const expectedLessons = getExpectedLessonCount(teacherName, className, subjectName);
 
+        Logger.log(`Processing Audit for: ${teacherName} - ${subjectName}`);
+
         let aiAuditText;
         try {
           aiAuditText = generateAiSummary(fileLink, className, subjectName, previousFileId, resubmissionData, expectedLessons);
         } catch (err) {
-          Logger.log("processPendingAudits: " + err.message);
-          aiAuditText = "⚠️ AI Audit Failed: Please notify the system administrator.";
+          Logger.log("AI Generation Error: " + err.message);
+          aiAuditText = "⚠️ AI Audit Failed: API Error. Will retry later.";
         }
 
-        updateSheetWithAudit(teacherName, subjectName, sheet.getName(), aiAuditText);
+        sheet.getRange(i + 1, AUDIT_COL + 1).setValue(aiAuditText);
 
         try {
           const weekMatch = weekRange.toString().match(/Week \d+/i);
           const cleanWeek = weekMatch ? weekMatch[0] : weekRange.toString();
           sendAuditAlert(teacherName, className, subjectName, aiAuditText, hodName, parseGhanaianDate(timestamp), latenessStatus, cleanWeek, resubmissionData.revisionCount);
         } catch (err) {
-          Logger.log("processPendingAudits Telegram: " + err.message);
+          Logger.log("Telegram Alert Error: " + err.message);
         }
-
-        return;
       }
     }
   } finally {

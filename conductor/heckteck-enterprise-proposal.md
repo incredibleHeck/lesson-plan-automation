@@ -39,7 +39,7 @@ Submitted files are organized in Drive with consistent naming and week structure
 
 Each submission is reviewed against **Cambridge-aligned pedagogical expectations** with **strict output formatting** so leadership receives comparable, scannable feedback (strengths, flags, rating, status). The model is instructed to respect **subject continuity** where prior-week context exists.
 
-Processing is **queued**: heavy generation does not block the form submit path; a scheduled job drains the queue in **single-row** steps so operations stay within platform time limits at high volume.
+Processing is **queued**: heavy generation does not block the form submit path; a scheduled job drains pending rows in **time-batched** runs (approximately up to **~5 minutes** of work per invocation) so operations stay within platform time limits at high volume.
 
 ### D. Deliverables matrix enforcement
 
@@ -99,7 +99,7 @@ Calculated fields such as extracting **RATING** and **LESSONS DETECTED** should 
 - **Phase 2 — Deliverables matrix:** Friday reporting and **Telegram Defaulters** ask “Did they submit what they **owe**?” using **Teaching Load** + **Staff Roster** routing.
 - **Phase 3 — Lessons/WK completeness:** Expected weekly lesson count drives the audit and Telegram partial-submission warnings (**Granular Tracking**).
 - **Phase 4 — Form alignment:** Class / Subject / Teacher dropdowns are populated from **Teaching Load** and **Staff Roster** via **`updateAllFormDropdowns`**, triggered manually from the spreadsheet (**HecTech Tools → Sync Form Dropdowns**) to protect Forms API quotas.
-- **Phase 5 — Enterprise resilience:** **Queued Pro audits** (pending placeholder + **10-minute** processor, one completion per run) avoid Apps Script **6-minute** timeouts; **Gemini** backoff on overload; **hourly** sweeper **resets** failed audit cells to pending (no inline re-generation); **Telegram** send backoff on **429**.
+- **Phase 5 — Enterprise resilience:** **Queued Pro audits** (pending placeholder + **10-minute** processor with **~5-minute** cap per run for multiple rows) avoid Apps Script **6-minute** timeouts; **Gemini** backoff on overload; **hourly** sweeper **resets** failed audit cells to pending (no inline re-generation); **Telegram** send backoff on **429**.
 - **Phase 6 — Autonomous calendar:** Reminders and reporting aligned to a **Term Schedule** for zero-touch operation.
 
 ---

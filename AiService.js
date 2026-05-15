@@ -97,7 +97,8 @@ function generateAudit(currentText, previousText, subjectCriteria, gradeLevel, s
     "1. DO NOT write paragraphs. You must use short, punchy bullet points. " +
     "2. MAXIMUM of 3 bullet points per section (Strengths & Flags). " +
     "3. Provide a strict quantitative rating out of 10, formatted as a float (e.g., 7.5/10). " +
-    "4. AUTOMATED DECISION ENGINE: A rating of 7.0 or higher is an automatic PASS. Anything 6.9 or lower is an automatic FAIL/REVISION. Be objective but firm.\n\n" +
+    "4. AUTOMATED DECISION ENGINE: A rating of 7.0 or higher is an automatic PASS. Anything 6.9 or lower is an automatic FAIL/REVISION. Be objective but firm. " +
+    "5. TEST/ASSESSMENT OVERRIDE: If the lesson is explicitly a dedicated Test, Exam, or full-period Assessment, DO NOT penalize for a lack of active teaching, group work, or standard pedagogy. Instead, evaluate the assessment structure (clear instructions, marking rubrics, alignment with prior topics) and grant a PASS if the assessment is well-organized.\n\n" +
     "Structure your response EXACTLY like this:\n\n" +
     "📖 TOPIC: [Extract the main topic of this lesson]\n" +
     "🎯 OBJECTIVES: [Extract 1-2 core Learning Objectives]\n" +
